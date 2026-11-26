@@ -682,7 +682,7 @@
     <button class="menu-item" id="menuAppearance">🎨 Appearance</button>
     <button class="menu-item" id="menuInstall">📲 Install App</button>
     <div class="menu-sep"></div>
-    <div class="menu-footer">Dominoes Engine · v1.0.0</div>
+    <div class="menu-footer">Dominoes Engine · v1.0.1</div>
   </nav>
 
   <!-- Unified Tabbed New Game & Online Room Modal -->
@@ -902,7 +902,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v1.0.0';
+  const APP_VERSION = 'v1.0.1';
   const DEVICE_ID = (() => {
     let id = localStorage.getItem('dominoes_device_id_v1');
     if (!id) {
@@ -1965,10 +1965,234 @@
   const TILE_GAP = 2;
 
   const BoardLayout = {
+    getHalfSpan(isCross4) {
+      const canvas = $('boardCanvas');
+      const rect = canvas ? canvas.getBoundingClientRect() : { width: 900, height: 600 };
+      const aspect = rect.height > 0 ? (rect.width / rect.height) : 1.4;
+      if (isCross4) return aspect >= 1.1 ? 285 : 225;
+      return aspect >= 1.15 ? 320 : 215;
+    },
+
+    layoutHorizSerpentine(tiles, initDx, rowDir, minX, maxX, prevBox, noTurnUntilId = null) {
+      // True boustrophedon (S-curve) arm within [minX, maxX]:
+      // Each U-turn advances strictly in rowDir (+1 downward or -1 upward) via two crisp 90-degree L-elbows,
+      // alternating horizontal direction so a chain can NEVER spiral back over itself.
+      const placed = [];
+      let dx = initDx;
+      let phase = 'horiz'; // 'horiz' | 'drop' | 'turn_back'
+      let prev = prevBox;
+      let seenTarget = !noTurnUntilId;
+
+      for (const t of tiles) {
+        if (phase === 'horiz' && seenTarget) {
+          const stepW = t.isDouble ? TILE_W : TILE_L;
+          const projX = prev.x + dx * (prev.w / 2 + TILE_GAP + stepW);
+          if ((dx > 0 && projX > maxX) || (dx < 0 && projX < minX)) {
+            phase = 'drop';
+          }
+        }
+
+        if (phase === 'horiz') {
+          const perp = t.isDouble;
+          const w = perp ? TILE_W : TILE_L;
+          const h = perp ? TILE_L : TILE_W;
+          const cx = prev.x + dx * (prev.w / 2 + TILE_GAP + w / 2);
+          const cy = prev.y;
+          const angle = perp
+            ? Math.PI / 2
+            : ((dx > 0 ? 0 : Math.PI) + (t.a === t.connectVal ? 0 : Math.PI));
+          const box = { tile: t, x: cx, y: cy, w, h, angle };
+          placed.push(box);
+          prev = box;
+        } else if (phase === 'drop') {
+          // Vertical connector aligned with the far half of prev so matching pips sit directly adjacent
+          const w = TILE_W, h = TILE_L;
+          const farEdgeX = prev.x + dx * (prev.w / 2);
+          const cx = farEdgeX - dx * (TILE_W / 2);
+          const cy = prev.y + rowDir * (prev.h / 2 + TILE_GAP + h / 2);
+          const baseAng = rowDir > 0 ? Math.PI / 2 : -Math.PI / 2;
+          const angle = baseAng + (t.a === t.connectVal ? 0 : Math.PI);
+          const box = { tile: t, x: cx, y: cy, w, h, angle };
+          placed.push(box);
+          prev = box;
+          dx = -dx;
+          phase = 'turn_back';
+        } else {
+          // First horizontal tile of the return row (always inline 70x35 for clean L-elbow)
+          const w = TILE_L, h = TILE_W;
+          const cx = prev.x + dx * (TILE_L / 2 - TILE_W / 2);
+          const cy = prev.y + rowDir * (prev.h / 2 + TILE_GAP + h / 2);
+          const baseAng = dx > 0 ? 0 : Math.PI;
+          const angle = baseAng + (t.a === t.connectVal ? 0 : Math.PI);
+          const box = { tile: t, x: cx, y: cy, w, h, angle };
+          placed.push(box);
+          prev = box;
+          phase = 'horiz';
+        }
+
+        if (noTurnUntilId && t.id === noTurnUntilId) seenTarget = true;
+      }
+
+      // Predict next open slot
+      if (phase === 'horiz' && seenTarget) {
+        const projX = prev.x + dx * (prev.w / 2 + TILE_GAP + TILE_L);
+        if ((dx > 0 && projX > maxX) || (dx < 0 && projX < minX)) phase = 'drop';
+      }
+      let slot;
+      if (phase === 'horiz') {
+        slot = {
+          x: prev.x + dx * (prev.w / 2 + TILE_GAP + TILE_L / 2 + 4),
+          y: prev.y,
+          angle: dx > 0 ? 0 : Math.PI,
+          dx, dy: 0
+        };
+      } else if (phase === 'drop') {
+        const farEdgeX = prev.x + dx * (prev.w / 2);
+        slot = {
+          x: farEdgeX - dx * (TILE_W / 2),
+          y: prev.y + rowDir * (prev.h / 2 + TILE_GAP + TILE_L / 2 + 4),
+          angle: rowDir > 0 ? Math.PI / 2 : -Math.PI / 2,
+          dx: 0, dy: rowDir
+        };
+      } else {
+        slot = {
+          x: prev.x + dx * (TILE_L / 2 - TILE_W / 2),
+          y: prev.y + rowDir * (prev.h / 2 + TILE_GAP + TILE_W / 2 + 4),
+          angle: dx > 0 ? 0 : Math.PI,
+          dx, dy: 0
+        };
+      }
+      return { placed, slot };
+    },
+
+    layoutVertQuadrantArm(tiles, initDy, sideDx, turnY, minX, maxX, prevBox) {
+      // Vertical spinner arm (up or down) that clears the horizontal spine before turning into its own disjoint quadrant
+      // (up -> Top-Right; down -> Bottom-Left) and then snakes outward cleanly without ever crossing another arm.
+      const placed = [];
+      let prev = prevBox;
+      let mode = 'vert_spine'; // 'vert_spine' | 'turn_horiz' | 'serpentine'
+      let dx = sideDx;
+      const rowDir = initDy;
+      let phase = 'horiz';
+
+      for (const t of tiles) {
+        if (mode === 'vert_spine') {
+          const perp = t.isDouble;
+          const stepH = perp ? TILE_W : TILE_L;
+          const projY = prev.y + initDy * (prev.h / 2 + TILE_GAP + stepH);
+          if ((initDy > 0 && projY > turnY) || (initDy < 0 && projY < turnY)) {
+            mode = 'turn_horiz';
+          } else {
+            const w = perp ? TILE_L : TILE_W;
+            const h = perp ? TILE_W : TILE_L;
+            const cx = prev.x;
+            const cy = prev.y + initDy * (prev.h / 2 + TILE_GAP + h / 2);
+            const baseAng = initDy > 0 ? Math.PI / 2 : -Math.PI / 2;
+            const angle = perp ? 0 : (baseAng + (t.a === t.connectVal ? 0 : Math.PI));
+            const box = { tile: t, x: cx, y: cy, w, h, angle };
+            placed.push(box);
+            prev = box;
+            continue;
+          }
+        }
+
+        if (mode === 'turn_horiz') {
+          const w = TILE_L, h = TILE_W;
+          const cx = prev.x + dx * (TILE_L / 2 - TILE_W / 2);
+          const cy = prev.y + rowDir * (prev.h / 2 + TILE_GAP + h / 2);
+          const baseAng = dx > 0 ? 0 : Math.PI;
+          const angle = baseAng + (t.a === t.connectVal ? 0 : Math.PI);
+          const box = { tile: t, x: cx, y: cy, w, h, angle };
+          placed.push(box);
+          prev = box;
+          mode = 'serpentine';
+          phase = 'horiz';
+          continue;
+        }
+
+        if (phase === 'horiz') {
+          const stepW = t.isDouble ? TILE_W : TILE_L;
+          const projX = prev.x + dx * (prev.w / 2 + TILE_GAP + stepW);
+          if ((dx > 0 && projX > maxX) || (dx < 0 && projX < minX)) phase = 'drop';
+        }
+        if (phase === 'horiz') {
+          const perp = t.isDouble;
+          const w = perp ? TILE_W : TILE_L;
+          const h = perp ? TILE_L : TILE_W;
+          const cx = prev.x + dx * (prev.w / 2 + TILE_GAP + w / 2);
+          const cy = prev.y;
+          const angle = perp
+            ? Math.PI / 2
+            : ((dx > 0 ? 0 : Math.PI) + (t.a === t.connectVal ? 0 : Math.PI));
+          const box = { tile: t, x: cx, y: cy, w, h, angle };
+          placed.push(box);
+          prev = box;
+        } else if (phase === 'drop') {
+          const w = TILE_W, h = TILE_L;
+          const farEdgeX = prev.x + dx * (prev.w / 2);
+          const cx = farEdgeX - dx * (TILE_W / 2);
+          const cy = prev.y + rowDir * (prev.h / 2 + TILE_GAP + h / 2);
+          const baseAng = rowDir > 0 ? Math.PI / 2 : -Math.PI / 2;
+          const angle = baseAng + (t.a === t.connectVal ? 0 : Math.PI);
+          const box = { tile: t, x: cx, y: cy, w, h, angle };
+          placed.push(box);
+          prev = box;
+          dx = -dx;
+          phase = 'turn_back';
+        } else {
+          const w = TILE_L, h = TILE_W;
+          const cx = prev.x + dx * (TILE_L / 2 - TILE_W / 2);
+          const cy = prev.y + rowDir * (prev.h / 2 + TILE_GAP + h / 2);
+          const baseAng = dx > 0 ? 0 : Math.PI;
+          const angle = baseAng + (t.a === t.connectVal ? 0 : Math.PI);
+          const box = { tile: t, x: cx, y: cy, w, h, angle };
+          placed.push(box);
+          prev = box;
+          phase = 'horiz';
+        }
+      }
+
+      // Predict next open slot
+      if (mode === 'vert_spine') {
+        const projY = prev.y + initDy * (prev.h / 2 + TILE_GAP + TILE_L);
+        if ((initDy > 0 && projY > turnY) || (initDy < 0 && projY < turnY)) mode = 'turn_horiz';
+      }
+      let slot;
+      if (mode === 'vert_spine') {
+        slot = {
+          x: prev.x,
+          y: prev.y + initDy * (prev.h / 2 + TILE_GAP + TILE_L / 2 + 4),
+          angle: initDy > 0 ? Math.PI / 2 : -Math.PI / 2,
+          dx: 0, dy: initDy
+        };
+      } else if (mode === 'turn_horiz') {
+        slot = {
+          x: prev.x + dx * (TILE_L / 2 - TILE_W / 2),
+          y: prev.y + rowDir * (prev.h / 2 + TILE_GAP + TILE_W / 2 + 4),
+          angle: dx > 0 ? 0 : Math.PI,
+          dx, dy: 0
+        };
+      } else {
+        if (phase === 'horiz') {
+          const projX = prev.x + dx * (prev.w / 2 + TILE_GAP + TILE_L);
+          if ((dx > 0 && projX > maxX) || (dx < 0 && projX < minX)) phase = 'drop';
+        }
+        if (phase === 'horiz') {
+          slot = { x: prev.x + dx * (prev.w / 2 + TILE_GAP + TILE_L / 2 + 4), y: prev.y, angle: dx > 0 ? 0 : Math.PI, dx, dy: 0 };
+        } else if (phase === 'drop') {
+          const farEdgeX = prev.x + dx * (prev.w / 2);
+          slot = { x: farEdgeX - dx * (TILE_W / 2), y: prev.y + rowDir * (prev.h / 2 + TILE_GAP + TILE_L / 2 + 4), angle: rowDir > 0 ? Math.PI / 2 : -Math.PI / 2, dx: 0, dy: rowDir };
+        } else {
+          slot = { x: prev.x + dx * (TILE_L / 2 - TILE_W / 2), y: prev.y + rowDir * (prev.h / 2 + TILE_GAP + TILE_W / 2 + 4), angle: dx > 0 ? 0 : Math.PI, dx, dy: 0 };
+        }
+      }
+      return { placed, slot };
+    },
+
     compute(state, viewSeatIdx) {
       const board = state.board;
-      const placed = []; // { tile, x, y, angle, w, h, endId? }
-      const openSlots = []; // { endId, value, x, y, angle, ownerIdx, trainOpen, isPendingDouble }
+      const placed = [];
+      const openSlots = [];
       if (!board || !board.tiles.length) {
         openSlots.push({ endId: 'root', value: null, x: 0, y: 0, angle: 0, isRoot: true });
         return { placed, openSlots, bounds: { minX: -90, maxX: 90, minY: -90, maxY: 90 } };
@@ -1978,14 +2202,13 @@
         return BoardLayout.computeMexicanTrain(state, viewSeatIdx);
       }
 
-      // Standard snake2 or cross4
       const root = board.tiles[0];
       const rootVert = root.isDouble;
       const rootW = rootVert ? TILE_W : TILE_L;
       const rootH = rootVert ? TILE_L : TILE_W;
-      // angle=0 means tile.a is on LEFT (-x), tile.b is on RIGHT (+x); angle=PI/2 means tile.a is TOP (-y), tile.b is BOTTOM (+y)
       const rootAngle = rootVert ? Math.PI / 2 : 0;
-      placed.push({ tile: root, x: 0, y: 0, angle: rootAngle, w: rootW, h: rootH });
+      const rootBox = { tile: root, x: 0, y: 0, angle: rootAngle, w: rootW, h: rootH };
+      placed.push(rootBox);
 
       const armGroups = { left: [], right: [], up: [], down: [] };
       for (let i = 1; i < board.tiles.length; i++) {
@@ -1993,101 +2216,54 @@
         if (armGroups[t.arm]) armGroups[t.arm].push(t);
       }
 
-      // Helper to lay out one snaking arm from anchor (ax, ay) in starting direction (dx, dy)
-      const layoutArm = (armId, startX, startY, initDx, initDy, turnSign, limit) => {
-        let ax = startX, ay = startY, dx = initDx, dy = initDy;
-        let stepInTurn = 0, turning = false;
-        let runDist = 0;
-
-        for (const t of armGroups[armId]) {
-          // Decide whether to corner-turn before exceeding horizontal/vertical reach
-          const horizontal = Math.abs(dx) > 0.5;
-          if (!turning && runDist >= limit) {
-            turning = true;
-            stepInTurn = 0;
-            // Rotate 90 degrees by turnSign (+1 clockwise or -1 counter-clockwise)
-            const ndx = -dy * turnSign;
-            const ndy = dx * turnSign;
-            // Shift anchor slightly inward on the side of previous tile for a neat elbow
-            ax += (-dx) * (TILE_W * 0.48) + ndx * (TILE_W * 0.5);
-            ay += (-dy) * (TILE_W * 0.48) + ndy * (TILE_W * 0.5);
-            dx = ndx; dy = ndy;
-            runDist = 0;
-          } else if (turning && stepInTurn >= 2) {
-            turning = false;
-            const ndx = -dy * turnSign;
-            const ndy = dx * turnSign;
-            ax += (-dx) * (TILE_W * 0.48) + ndx * (TILE_W * 0.5);
-            ay += (-dy) * (TILE_W * 0.48) + ndy * (TILE_W * 0.5);
-            dx = ndx; dy = ndy;
-            runDist = 0;
-          }
-
-          const perpDouble = t.isDouble && !turning;
-          const halfAlong = perpDouble ? TILE_W / 2 : TILE_L / 2;
-          const cx = ax + dx * (halfAlong + TILE_GAP);
-          const cy = ay + dy * (halfAlong + TILE_GAP);
-
-          // Orientation so connectVal touches (ax, ay) and openVal faces (dx, dy)
-          let angle;
-          if (perpDouble) {
-            angle = Math.atan2(dy, dx) + Math.PI / 2;
-          } else {
-            // If t.a === connectVal, t.a should sit toward (-dx, -dy) and t.b toward (+dx, +dy) => base angle = atan2(dy, dx)
-            // If t.b === connectVal, flip 180 deg!
-            angle = Math.atan2(dy, dx) + (t.a === t.connectVal ? 0 : Math.PI);
-          }
-
-          const isVert = Math.abs(Math.sin(angle)) > 0.7;
-          placed.push({ tile: t, x: cx, y: cy, angle, w: isVert ? TILE_W : TILE_L, h: isVert ? TILE_L : TILE_W });
-
-          ax = cx + dx * halfAlong;
-          ay = cy + dy * halfAlong;
-          runDist += halfAlong * 2 + TILE_GAP;
-          if (turning) stepInTurn++;
-        }
-
-        // Open slot for this arm if present in board.openEnds
-        const endObj = board.openEnds.find((e) => e.id === armId);
-        if (endObj) {
-          let sx = ax, sy = ay, sdx = dx, sdy = dy;
-          if (!turning && runDist >= limit) {
-            const ndx = -dy * turnSign, ndy = dx * turnSign;
-            sx += (-dx) * (TILE_W * 0.48) + ndx * (TILE_W * 0.5);
-            sy += (-dy) * (TILE_W * 0.48) + ndy * (TILE_W * 0.5);
-            sdx = ndx; sdy = ndy;
-          } else if (turning && stepInTurn >= 2) {
-            const ndx = -dy * turnSign, ndy = dx * turnSign;
-            sx += (-dx) * (TILE_W * 0.48) + ndx * (TILE_W * 0.5);
-            sy += (-dy) * (TILE_W * 0.48) + ndy * (TILE_W * 0.5);
-            sdx = ndx; sdy = ndy;
-          }
-          openSlots.push({
-            endId: endObj.id,
-            value: endObj.value,
-            x: sx + sdx * (TILE_L / 2 + TILE_GAP + 4),
-            y: sy + sdy * (TILE_L / 2 + TILE_GAP + 4),
-            angle: Math.atan2(sdy, sdx),
-            dx: sdx, dy: sdy
-          });
-        }
-      };
-
-      const snakeLimit = board.layoutType === 'cross4' ? 235 : 225;
-      layoutArm('right', rootW / 2, 0, 1, 0, 1, snakeLimit);
-      layoutArm('left', -rootW / 2, 0, -1, 0, 1, snakeLimit);
-
-      // Up / Down arms (either on root spinner or an arm spinner in All Fives)
       const upEnd = board.openEnds.find((e) => e.id === 'up');
       const downEnd = board.openEnds.find((e) => e.id === 'down');
-      if (upEnd || downEnd) {
-        let anchorX = 0, anchorY = 0, halfH = rootH / 2;
-        if (upEnd && upEnd.anchorTileId && upEnd.anchorTileId !== root.id) {
-          const sp = placed.find((p) => p.tile.id === upEnd.anchorTileId);
-          if (sp) { anchorX = sp.x; anchorY = sp.y; halfH = sp.h / 2; }
+      const rightEnd = board.openEnds.find((e) => e.id === 'right');
+      const leftEnd = board.openEnds.find((e) => e.id === 'left');
+      const hasCrossArms = !!(upEnd || downEnd || board.layoutType === 'cross4');
+      const halfSpan = BoardLayout.getHalfSpan(hasCrossArms);
+
+      if (!hasCrossArms) {
+        // 2-end true boustrophedon serpentine (right snakes steadily down; left snakes steadily up)
+        const rRes = BoardLayout.layoutHorizSerpentine(armGroups.right, +1, +1, -halfSpan, halfSpan, rootBox);
+        const lRes = BoardLayout.layoutHorizSerpentine(armGroups.left, -1, -1, -halfSpan, halfSpan, rootBox);
+        placed.push(...rRes.placed, ...lRes.placed);
+        if (rightEnd) openSlots.push(Object.assign({ endId: 'right', value: rightEnd.value }, rRes.slot));
+        if (leftEnd) openSlots.push(Object.assign({ endId: 'left', value: leftEnd.value }, lRes.slot));
+      } else {
+        // 4-arm pinwheel quadrant-disjoint layout (All Fives & Maltese Cross)
+        const anchorId = (upEnd && upEnd.anchorTileId) || (downEnd && downEnd.anchorTileId) || (board.spinnerId || root.id);
+        const spInRight = armGroups.right.some((t) => t.id === anchorId);
+        const spInLeft = armGroups.left.some((t) => t.id === anchorId);
+
+        let spX = 0;
+        if (anchorId !== root.id && (spInRight || spInLeft)) {
+          const probe = spInRight
+            ? BoardLayout.layoutHorizSerpentine(armGroups.right, +1, +1, 85, 9999, rootBox, anchorId).placed
+            : BoardLayout.layoutHorizSerpentine(armGroups.left, -1, -1, -9999, -85, rootBox, anchorId).placed;
+          const found = probe.find((p) => p.tile.id === anchorId);
+          if (found) spX = found.x;
         }
-        if (upEnd) layoutArm('up', anchorX, anchorY - halfH, 0, -1, 1, 175);
-        if (downEnd) layoutArm('down', anchorX, anchorY + halfH, 0, 1, 1, 175);
+
+        const rMinX = spX + 85, rMaxX = Math.max(halfSpan, spX + halfSpan);
+        const lMinX = Math.min(-halfSpan, spX - halfSpan), lMaxX = spX - 85;
+        const rRes = BoardLayout.layoutHorizSerpentine(armGroups.right, +1, +1, rMinX, rMaxX, rootBox, spInRight ? anchorId : null);
+        const lRes = BoardLayout.layoutHorizSerpentine(armGroups.left, -1, -1, lMinX, lMaxX, rootBox, spInLeft ? anchorId : null);
+        placed.push(...rRes.placed, ...lRes.placed);
+        if (rightEnd) openSlots.push(Object.assign({ endId: 'right', value: rightEnd.value }, rRes.slot));
+        if (leftEnd) openSlots.push(Object.assign({ endId: 'left', value: leftEnd.value }, lRes.slot));
+
+        const spBox = (anchorId !== root.id ? placed.find((p) => p.tile.id === anchorId) : null) || rootBox;
+        if (upEnd) {
+          const uRes = BoardLayout.layoutVertQuadrantArm(armGroups.up, -1, +1, -135, spBox.x + 10, Math.max(halfSpan, spBox.x + halfSpan), spBox);
+          placed.push(...uRes.placed);
+          openSlots.push(Object.assign({ endId: 'up', value: upEnd.value }, uRes.slot));
+        }
+        if (downEnd) {
+          const dRes = BoardLayout.layoutVertQuadrantArm(armGroups.down, +1, -1, 135, Math.min(-halfSpan, spBox.x - halfSpan), spBox.x - 10, spBox);
+          placed.push(...dRes.placed);
+          openSlots.push(Object.assign({ endId: 'down', value: downEnd.value }, dRes.slot));
+        }
       }
 
       return { placed, openSlots, bounds: BoardLayout.calcBounds(placed, openSlots) };
