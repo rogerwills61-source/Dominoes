@@ -90,7 +90,7 @@
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
-      margin: 0; padding: 0; width: 100%; height: 100dvh; overflow: hidden;
+      margin: 0; padding: 0; width: 100%; height: 100%; height: 100dvh; overflow: hidden;
       background: var(--bg-app); color: var(--text-main);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
       user-select: none; -webkit-user-select: none; touch-action: none;
@@ -98,7 +98,7 @@
     button, input, select { font-family: inherit; }
 
     #appShell {
-      display: flex; flex-direction: column; width: 100%; height: 100dvh;
+      display: flex; flex-direction: column; width: 100%; height: 100%; height: 100dvh;
       overflow: hidden; position: relative;
     }
 
@@ -152,7 +152,7 @@
 
     /* Main Table Stage */
     #tableStage {
-      flex: 1 1 auto; position: relative; overflow: hidden;
+      flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden;
       background: var(--rail-color);
       border-top: 3px solid var(--rail-border);
       border-bottom: 3px solid var(--rail-border);
@@ -682,7 +682,7 @@
     <button class="menu-item" id="menuAppearance">🎨 Appearance</button>
     <button class="menu-item" id="menuInstall">📲 Install App</button>
     <div class="menu-sep"></div>
-    <div class="menu-footer">Dominoes Engine · v1.0.1</div>
+    <div class="menu-footer">Dominoes Engine · v1.0.2</div>
   </nav>
 
   <!-- Unified Tabbed New Game & Online Room Modal -->
@@ -902,7 +902,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v1.0.1';
+  const APP_VERSION = 'v1.0.2';
   const DEVICE_ID = (() => {
     let id = localStorage.getItem('dominoes_device_id_v1');
     if (!id) {
@@ -2738,19 +2738,24 @@
 
   function startTileAnim(tile, endId, playerIdx, isRemoteOrBot) {
     const canvas = $('boardCanvas');
-    const rect = canvas.getBoundingClientRect();
+    const rect = canvas ? canvas.getBoundingClientRect() : null;
+    if (!rect || !rect.width || !rect.height) { activeAnim = null; return; }
     const viewSeat = getViewSeatIdx();
     lastLayout = BoardLayout.compute(Game, viewSeat);
     const placedObj = lastLayout.placed.find((p) => p.tile.id === tile.id);
-    if (!placedObj) return;
+    if (!placedObj) { activeAnim = null; return; }
     const orig = getEdgeOriginWorld(playerIdx, viewSeat, rect.width, rect.height);
+    if (!Number.isFinite(orig.x) || !Number.isFinite(orig.y) || !Number.isFinite(placedObj.x) || !Number.isFinite(placedObj.y)) {
+      activeAnim = null;
+      return;
+    }
     activeAnim = {
       tileId: tile.id,
       a: tile.a, b: tile.b,
       fromX: orig.x, fromY: orig.y,
       toX: placedObj.x, toY: placedObj.y,
       toAngle: placedObj.angle,
-      startAt: performance.now(), // Always forcePlay from elapsed=0 (clock-skew proof!)
+      startAt: null, // Anchored to first rAF timestamp so mobile WebViews never stall or hide tiles
       dur: isRemoteOrBot ? 880 : 380,
       clacked: false
     };
@@ -2840,21 +2845,26 @@
 
     // Active Tile-Slide Animation
     if (activeAnim) {
+      if (activeAnim.startAt === null) activeAnim.startAt = now;
       const elapsed = now - activeAnim.startAt;
       const t = Math.min(1, Math.max(0, elapsed / activeAnim.dur));
       const ease = 1 - Math.pow(1 - t, 3);
       const ax = activeAnim.fromX + (activeAnim.toX - activeAnim.fromX) * ease;
       const ay = activeAnim.fromY + (activeAnim.toY - activeAnim.fromY) * ease;
-      const lift = Math.sin(t * Math.PI);
-      ctx.save();
-      ctx.translate(ax, ay - lift * 14);
-      ctx.rotate(activeAnim.toAngle);
-      ctx.scale(1 + lift * 0.14, 1 + lift * 0.14);
-      drawDominoTile(ctx, activeAnim.a, activeAnim.b, TILE_L, TILE_W, { lifted: true, highlight: true });
-      ctx.restore();
-      if (t >= 1) {
-        if (!activeAnim.clacked) { AudioFX.clack(); activeAnim.clacked = true; }
+      if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
         activeAnim = null;
+      } else {
+        const lift = Math.sin(t * Math.PI);
+        ctx.save();
+        ctx.translate(ax, ay - lift * 14);
+        ctx.rotate(activeAnim.toAngle);
+        ctx.scale(1 + lift * 0.14, 1 + lift * 0.14);
+        drawDominoTile(ctx, activeAnim.a, activeAnim.b, TILE_L, TILE_W, { lifted: true, highlight: true });
+        ctx.restore();
+        if (t >= 1) {
+          if (!activeAnim.clacked) { AudioFX.clack(); activeAnim.clacked = true; }
+          activeAnim = null;
+        }
       }
     }
 
@@ -3274,12 +3284,13 @@
       }, 3000);
     },
 
-    openBroker(broker, willPayload) {
+    openBroker(broker, willPayload, attempt = 0) {
       if (!Sync.activeRoomId) return;
+      const roomAtOpen = Sync.activeRoomId;
       try {
         const ws = new WebSocket(broker.url, 'mqtt');
         ws.binaryType = 'arraybuffer';
-        const entry = { ws, ready: false, buf: new Uint8Array(0), pingTimer: null };
+        const entry = { ws, ready: false, buf: new Uint8Array(0), pingTimer: null, retryTimer: null, broker, willPayload };
         Sync.sockets.set(broker.name, entry);
 
         ws.onopen = () => {
@@ -3319,6 +3330,15 @@
           entry.ready = false;
           clearInterval(entry.pingTimer);
           updateRelayStatusUI();
+          if (Sync.activeRoomId === roomAtOpen && !entry.retryTimer) {
+            const backoff = Math.min(12000, 1200 * Math.pow(1.6, Math.min(attempt, 5)));
+            entry.retryTimer = setTimeout(() => {
+              entry.retryTimer = null;
+              if (Sync.activeRoomId === roomAtOpen && Sync.sockets.get(broker.name) === entry) {
+                Sync.openBroker(broker, willPayload, attempt + 1);
+              }
+            }, backoff);
+          }
         };
       } catch {}
     },
@@ -3674,6 +3694,7 @@
 
       for (const entry of Sync.sockets.values()) {
         clearInterval(entry.pingTimer);
+        clearTimeout(entry.retryTimer);
         try {
           if (entry.ws.readyState === 1) entry.ws.send(MqttCodec.disconnect());
           entry.ws.close();
@@ -3877,10 +3898,11 @@
   /* =========================================================================
    * 12. TOUCH-DRAG, TAP-TO-PLACE, PAN & PINCH-TO-ZOOM
    * ========================================================================= */
-  const Drag = { active: false, tileId: null, pointerId: null, startX: 0, startY: 0, moved: false, snapEndId: null };
+  const Drag = { active: false, tileId: null, pointerId: null, startX: 0, startY: 0, moved: false, snapEndId: null, sourceEl: null };
 
   function startTileDrag(e, tile, playable) {
     if (!playable) return;
+    if (e.cancelable) e.preventDefault();
     Drag.active = true;
     Drag.tileId = tile.id;
     Drag.pointerId = e.pointerId;
@@ -3888,7 +3910,7 @@
     Drag.startY = e.clientY;
     Drag.moved = false;
     Drag.snapEndId = null;
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    Drag.sourceEl = e.currentTarget;
 
     const ghost = $('dragTileGhost');
     const gctx = ghost.getContext('2d');
@@ -3897,44 +3919,63 @@
     gctx.translate(ghost.width / 2, ghost.height / 2);
     drawDominoTile(gctx, tile.a, tile.b, 80, 152, { lifted: true, highlight: true });
     gctx.restore();
+
+    window.addEventListener('pointermove', moveTileDrag, { passive: false });
+    window.addEventListener('pointerup', endTileDrag);
+    window.addEventListener('pointercancel', endTileDrag);
   }
 
   function moveTileDrag(e) {
     if (!Drag.active || e.pointerId !== Drag.pointerId) return;
+    if (e.cancelable) e.preventDefault();
     const dx = e.clientX - Drag.startX, dy = e.clientY - Drag.startY;
-    if (!Drag.moved && Math.hypot(dx, dy) > 10) {
+    if (!Drag.moved && Math.hypot(dx, dy) > 14) {
       Drag.moved = true;
       selectedTileId = Drag.tileId;
+      // Update source tile styling in place (NEVER rebuild #handRack mid-drag!)
+      if (Drag.sourceEl) Drag.sourceEl.classList.add('dragging-src');
       $('dragTileGhost').classList.remove('hidden');
-      renderHandRack();
     }
     if (!Drag.moved) return;
     const ghost = $('dragTileGhost');
     ghost.style.left = e.clientX + 'px';
     ghost.style.top = e.clientY + 'px';
 
-    // Snap to closest legal open end within generous radius
+    // Snap using the ghost tile's visual center (shifted slightly above thumb)
     const canvas = $('boardCanvas');
     const rect = canvas.getBoundingClientRect();
-    const wx = (e.clientX - rect.left - rect.width / 2) / Cam.zoom + Cam.x;
-    const wy = (e.clientY - rect.top - rect.height / 2) / Cam.zoom + Cam.y;
+    const dropX = e.clientX;
+    const dropY = e.clientY - 22;
+    const overBoard = dropX >= rect.left && dropX <= rect.right && dropY >= rect.top && dropY <= rect.bottom;
+    const wx = (dropX - rect.left - rect.width / 2) / Cam.zoom + Cam.x;
+    const wy = (dropY - rect.top - rect.height / 2) / Cam.zoom + Cam.y;
     const legal = Rules.getLegalMoves(Game, Game.activePlayerIndex).filter((m) => m.tileId === Drag.tileId);
-    let bestEnd = null, bestDist = 78 / Math.max(0.5, Cam.zoom);
+    let bestEnd = null, bestDist = Math.max(82, 82 / Math.max(0.35, Cam.zoom));
     for (const m of legal) {
       const slot = lastLayout.openSlots.find((s) => s.endId === m.endId);
       if (!slot) continue;
       const d = Math.hypot(slot.x - wx, slot.y - wy);
       if (d < bestDist) { bestDist = d; bestEnd = m.endId; }
     }
+    // If only 1 legal end exists and the tile is dragged anywhere onto the table felt, snap cleanly to it
+    if (!bestEnd && overBoard && legal.length === 1) {
+      bestEnd = legal[0].endId;
+    }
     Drag.snapEndId = bestEnd;
   }
 
   function endTileDrag(e) {
     if (!Drag.active || e.pointerId !== Drag.pointerId) return;
+    window.removeEventListener('pointermove', moveTileDrag);
+    window.removeEventListener('pointerup', endTileDrag);
+    window.removeEventListener('pointercancel', endTileDrag);
+
     const wasMoved = Drag.moved;
     const tileId = Drag.tileId;
     const snapEnd = Drag.snapEndId;
-    Drag.active = false; Drag.tileId = null; Drag.pointerId = null; Drag.moved = false; Drag.snapEndId = null;
+    const srcEl = Drag.sourceEl;
+    Drag.active = false; Drag.tileId = null; Drag.pointerId = null; Drag.moved = false; Drag.snapEndId = null; Drag.sourceEl = null;
+    if (srcEl) srcEl.classList.remove('dragging-src');
     $('dragTileGhost').classList.add('hidden');
 
     if (wasMoved && snapEnd) {
@@ -3987,7 +4028,7 @@
       Pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (Pointers.size === 1 && panLast) {
         const dx = e.clientX - panLast.x, dy = e.clientY - panLast.y;
-        if (tapCandidate && Math.hypot(e.clientX - tapCandidate.x, e.clientY - tapCandidate.y) > 9) tapCandidate = null;
+        if (tapCandidate && Math.hypot(e.clientX - tapCandidate.x, e.clientY - tapCandidate.y) > 15) tapCandidate = null;
         Cam.targetX -= dx / Cam.zoom; Cam.targetY -= dy / Cam.zoom;
         Cam.x = Cam.targetX; Cam.y = Cam.targetY;
         panLast = { x: e.clientX, y: e.clientY };
@@ -4006,7 +4047,7 @@
       if (Pointers.size === 0) {
         canvas.classList.remove('grabbing');
         panLast = null;
-        if (tapCandidate && Date.now() - tapCandidate.time < 340) {
+        if (tapCandidate && Date.now() - tapCandidate.time < 450) {
           handleBoardTap(e.clientX, e.clientY);
         }
         tapCandidate = null;
@@ -4049,7 +4090,7 @@
       const legal = Rules.getLegalMoves(Game, Game.activePlayerIndex).filter((m) => m.tileId === selectedTileId);
       for (const m of legal) {
         const slot = lastLayout.openSlots.find((s) => s.endId === m.endId);
-        if (slot && Math.hypot(slot.x - wp.x, slot.y - wp.y) < 56 / Math.max(0.5, Cam.zoom)) {
+        if (slot && Math.hypot(slot.x - wp.x, slot.y - wp.y) < Math.max(66, 56 / Math.max(0.32, Cam.zoom))) {
           performPlaceTile(Game.activePlayerIndex, selectedTileId, m.endId, false);
           return;
         }
@@ -4216,9 +4257,6 @@
       wrap.appendChild(c);
 
       wrap.addEventListener('pointerdown', (e) => startTileDrag(e, tile, playable));
-      wrap.addEventListener('pointermove', moveTileDrag);
-      wrap.addEventListener('pointerup', endTileDrag);
-      wrap.addEventListener('pointercancel', endTileDrag);
       rack.appendChild(wrap);
     }
   }
@@ -4868,11 +4906,21 @@
       const cfg = readSetupModalConfig();
       if (isOnlineRoom()) {
         if (!isHostDevice()) { showToast('Only the Host can start a new room game'); return; }
+        const prevCommitSeq = (Game && Game.roomId === Sync.activeRoomId) ? (Game.commitSeq || 0) : 0;
+        const prevPlayers = (Game && Game.roomId === Sync.activeRoomId) ? Game.players : [];
         cfg.roomId = Sync.activeRoomId;
         cfg.sessionToken = Sync.sessionToken;
         cfg.seats[0].isAI = false;
         cfg.seats[0].claimedByDeviceId = DEVICE_ID;
+        for (let i = 1; i < cfg.seats.length; i++) {
+          if (!cfg.seats[i].isAI && !cfg.seats[i].claimedByDeviceId && prevPlayers[i] && prevPlayers[i].claimedByDeviceId) {
+            cfg.seats[i].claimedByDeviceId = prevPlayers[i].claimedByDeviceId;
+          }
+        }
         Game = createDefaultGame(cfg);
+        Game.commitSeq = prevCommitSeq + 1;
+        Game.turnSeq = prevCommitSeq + 1;
+        Game.updatedAt = Date.now();
         mySeatIdx = 0;
         isSpectator = false;
         Sync.broadcastState();
@@ -4967,6 +5015,15 @@
     window.addEventListener('beforeunload', announceExit);
     window.addEventListener('pageshow', (e) => {
       if (e.persisted && Sync.activeRoomId) Sync.send({ type: 'HELLO', isHost: Sync.isHost });
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && Sync.activeRoomId) {
+        for (const [name, entry] of Sync.sockets.entries()) {
+          if (!entry.ready && entry.ws.readyState !== 0) Sync.openBroker(entry.broker, entry.willPayload, 0);
+        }
+        Sync.send({ type: 'SYNC_REQ', at: Date.now() });
+        fitTable(false);
+      }
     });
 
     // URL hash join handling (strip hash after joining!)
