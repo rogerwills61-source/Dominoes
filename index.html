@@ -480,18 +480,36 @@
     }
     .players-header-row .seg-row { flex-wrap: nowrap; }
     .players-header-row .seg-btn { min-width: 38px; padding: 5px 10px; font-size: 12px; }
-    .accordion-btn {
-      width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-      padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border);
-      background: var(--bg-card); color: var(--text-main); font-size: 12.5px; font-weight: 700;
-      cursor: pointer;
+    .modal-backdrop.sub-modal { z-index: 152; }
+    .subwin-btn {
+      width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 10px 12px; border-radius: 11px; border: 1px solid var(--border);
+      background: var(--bg-card); color: var(--text-main); text-align: left;
+      cursor: pointer; transition: border-color 0.14s, background 0.14s;
     }
-    .accordion-summary { font-size: 11.5px; color: var(--text-muted); font-weight: 600; }
-    .accordion-body {
-      margin-top: 8px; padding: 10px; border-radius: 10px;
-      background: var(--bg-input); border: 1px solid var(--border);
+    .subwin-btn:hover { border-color: var(--accent); }
+    .subwin-btn.is-hosting { border-color: var(--ok); background: var(--accent-soft); }
+    .subwin-title { font-size: 13px; font-weight: 700; }
+    .subwin-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+    .subwin-right {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 700; color: var(--text-muted); flex-shrink: 0;
     }
-    .accordion-body.hidden { display: none; }
+    .subwin-chev { font-size: 17px; line-height: 1; color: var(--accent); font-weight: 800; }
+    .host-roster-wrap {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+    }
+    .host-seat-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 700;
+      background: var(--bg-input); border: 1px solid var(--border); color: var(--text-main);
+    }
+    .host-seat-chip.is-live { border-color: var(--ok); }
+    .host-seat-chip .chip-tag {
+      font-size: 10px; padding: 1px 6px; border-radius: 999px;
+      background: var(--th-bg); color: var(--text-muted);
+    }
+    .host-seat-chip.is-live .chip-tag { background: #176944; color: #fff; }
     .hidden { display: none !important; }
     .join-divider {
       display: flex; align-items: center; gap: 10px; margin: 12px 0;
@@ -739,10 +757,10 @@
     <button class="menu-item" id="menuAppearance">🎨 Appearance</button>
     <button class="menu-item" id="menuInstall">📲 Install App</button>
     <div class="menu-sep"></div>
-    <div class="menu-footer">Dominoes Engine · v1.1.0</div>
+    <div class="menu-footer">Dominoes Engine · v1.2.0</div>
   </nav>
 
-  <!-- Streamlined New Game Modal (Game Type -> Players & Seats -> Optional Online & Match Options) -->
+  <!-- Streamlined New Game Modal (Zero-Scroll Hub with Dedicated Sub-Windows) -->
   <div id="newGameModal" class="modal-backdrop hidden">
     <div class="modal-card">
       <div class="modal-head">
@@ -778,60 +796,100 @@
           <div id="setupSeatsList"></div>
         </div>
 
-        <!-- 3. Play Across Devices (Online Room Toggle + Host Invite Card) -->
-        <div class="field-group" style="margin-bottom:10px;">
-          <div class="toggle-row" style="margin-bottom:0;">
+        <!-- 3. Sub-Window Triggers (Open Focused Windows Instead of Expanding Inline) -->
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button id="btnOpenHostModal" class="subwin-btn" type="button">
             <div>
-              <div style="font-size:13px;font-weight:700;">🌐 Play Across Devices</div>
-              <div style="font-size:11px;color:var(--text-muted);" id="onlineHostSub">Single device or vs. Computer</div>
+              <div class="subwin-title">🌐 Host a Game</div>
+              <div class="subwin-sub" id="onlineHostSub">Invite players on other devices</div>
             </div>
-            <button id="toggleOnlineHost" class="switch-btn" type="button" aria-label="Toggle Online Room"></button>
-          </div>
-          <div id="roomConnectedBox" class="room-panel hidden" style="margin-top:8px;margin-bottom:0;">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-              <div>
-                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:700;">Room Code</div>
-                <div class="room-code-big" id="roomCodeDisplay">----</div>
-              </div>
-              <div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end;">
-                <button id="btnToggleQR" class="btn sm">Hide QR</button>
-                <button id="btnCopyLink" class="btn sm">Copy Link</button>
-                <button id="btnShareLink" class="btn sm">Share</button>
-                <button id="btnDisconnectRoom" class="btn sm danger">Leave</button>
-              </div>
-            </div>
-            <div id="qrContainer" class="qr-wrap">
-              <canvas id="qrCanvas" width="176" height="176"></canvas>
-              <div style="font-size:11.5px;color:#222;font-weight:600;">Friends scan or use Menu → Join Game</div>
-            </div>
-            <div class="relay-line" id="relayStatusLine">Connecting relays...</div>
-          </div>
-        </div>
-
-        <!-- 4. Collapsible Match Options (Target Score & Bot Difficulty) -->
-        <div class="field-group" style="margin-bottom:0;">
-          <button id="btnMatchOptions" class="accordion-btn" type="button">
-            <span>⚙ Match Options</span>
-            <span class="accordion-summary" id="matchOptionsSummary">Target: 100 · Bot: Pro ▾</span>
+            <span class="subwin-right">
+              <span class="seat-badge live hidden" id="hostStatusChip">Live</span>
+              <span class="subwin-chev">›</span>
+            </span>
           </button>
-          <div id="matchOptionsBody" class="accordion-body hidden">
-            <div class="field-group" style="margin-bottom:10px;">
-              <label class="field-label" id="targetScoreLabel">Match Target</label>
-              <div class="seg-row" id="setupTargetRow"></div>
+
+          <button id="btnOpenMatchOptions" class="subwin-btn" type="button">
+            <div>
+              <div class="subwin-title">⚙ Match Options</div>
+              <div class="subwin-sub" id="matchOptionsSummary">100 · Bot: Pro</div>
             </div>
-            <div id="setupBotDiffGroup" class="field-group" style="margin-bottom:0;">
-              <label class="field-label">Bot Difficulty</label>
-              <div class="seg-row" id="setupBotDiffRow">
-                <button class="seg-btn" data-diff="casual">Casual</button>
-                <button class="seg-btn" data-diff="pro">Pro</button>
-              </div>
-            </div>
-          </div>
+            <span class="subwin-right">
+              <span class="subwin-chev">›</span>
+            </span>
+          </button>
         </div>
       </div>
       <div class="modal-foot">
         <button class="btn" data-close="newGameModal">Cancel</button>
         <button class="btn primary" id="btnStartGame">Start Game</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated Host a Game Sub-Window -->
+  <div id="hostGameModal" class="modal-backdrop sub-modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="modal-title">🌐 Host a Game</div>
+        <button class="modal-close" data-close="hostGameModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="roomConnectedBox" class="room-panel" style="margin-bottom:0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div>
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:700;">Room Code</div>
+              <div class="room-code-big" id="roomCodeDisplay">----</div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;">
+              <button id="btnToggleQR" class="btn sm" type="button">Hide QR</button>
+              <button id="btnCopyLink" class="btn sm" type="button">Copy Link</button>
+              <button id="btnShareLink" class="btn sm" type="button">Share</button>
+            </div>
+          </div>
+          <div id="qrContainer" class="qr-wrap">
+            <canvas id="qrCanvas" width="184" height="184"></canvas>
+            <div style="font-size:11.5px;color:#222;font-weight:600;">Friends scan or use Menu → Join Game</div>
+          </div>
+          <div class="relay-line" id="relayStatusLine">Connecting relays...</div>
+          <div class="host-roster-wrap" id="hostSeatsPreview"></div>
+        </div>
+      </div>
+      <div class="modal-foot" style="justify-content:space-between;">
+        <button id="btnDisconnectRoom" class="btn sm danger" type="button">Stop Hosting</button>
+        <div style="display:flex;gap:8px;">
+          <button id="btnHostBack" class="btn" type="button" data-close="hostGameModal">Back</button>
+          <button id="btnHostStartGame" class="btn primary" type="button">Start Room Game</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated Match Options Sub-Window -->
+  <div id="matchOptionsModal" class="modal-backdrop sub-modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="modal-title">⚙ Match Options</div>
+        <button class="modal-close" data-close="matchOptionsModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-group">
+          <label class="field-label" id="targetScoreLabel">Match Target</label>
+          <div class="seg-row" id="setupTargetRow"></div>
+        </div>
+        <div id="setupBotDiffGroup" class="field-group" style="margin-bottom:0;">
+          <label class="field-label">Bot Difficulty</label>
+          <div class="seg-row" id="setupBotDiffRow">
+            <button class="seg-btn" type="button" data-diff="casual">Casual</button>
+            <button class="seg-btn" type="button" data-diff="pro">Pro</button>
+          </div>
+        </div>
+        <div id="noBotsHint" class="hidden" style="font-size:12px;color:var(--text-muted);margin-top:6px;">
+          All seats are currently set to Human — switch any seat to Bot in New Game to adjust Bot Difficulty.
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn primary" type="button" data-close="matchOptionsModal">Done</button>
       </div>
     </div>
   </div>
@@ -878,7 +936,7 @@
           </div>
           <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--text-muted);">
             <span>Hosting your own table instead?</span>
-            <button id="btnSwitchToHost" class="btn sm">Host New Game</button>
+            <button id="btnSwitchToHost" class="btn sm">Host a Game</button>
           </div>
         </div>
       </div>
@@ -997,7 +1055,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v1.1.0';
+  const APP_VERSION = 'v1.2.0';
   const DEVICE_ID = (() => {
     let id = localStorage.getItem('dominoes_device_id_v1');
     if (!id) {
@@ -4542,7 +4600,6 @@
     teamMode: 'individual',
     targetScore: 100,
     botDifficulty: 'pro',
-    optionsExpanded: false,
     seats: [
       { name: 'Player 1', isAI: false, claimedByDeviceId: DEVICE_ID },
       { name: 'DominoBot', isAI: true, claimedByDeviceId: null },
@@ -4575,30 +4632,45 @@
       }
     }
     if (!$('newGameModal').classList.contains('hidden')) renderSetupModal();
+    if (!$('hostGameModal').classList.contains('hidden')) updateRoomModalUI();
   }
 
-  function openNewGameModal(enableOnline = false) {
-    if (Game) {
-      SetupDraft.variant = Game.variant;
-      SetupDraft.playerCount = Game.players.length;
-      SetupDraft.teamMode = Game.teamMode;
-      SetupDraft.targetScore = Game.targetScore;
-      SetupDraft.botDifficulty = Game.botDifficulty || 'pro';
-      for (let i = 0; i < Game.players.length; i++) {
-        SetupDraft.seats[i] = {
-          name: Game.players[i].name,
-          isAI: Game.players[i].isAI,
-          claimedByDeviceId: Game.players[i].claimedByDeviceId
-        };
-      }
+  function syncDraftFromGame() {
+    if (!Game) return;
+    SetupDraft.variant = Game.variant;
+    SetupDraft.playerCount = Game.players.length;
+    SetupDraft.teamMode = Game.teamMode;
+    SetupDraft.targetScore = Game.targetScore;
+    SetupDraft.botDifficulty = Game.botDifficulty || 'pro';
+    for (let i = 0; i < Game.players.length; i++) {
+      SetupDraft.seats[i] = {
+        name: Game.players[i].name,
+        isAI: Game.players[i].isAI,
+        claimedByDeviceId: Game.players[i].claimedByDeviceId
+      };
     }
-    SetupDraft.optionsExpanded = false;
-    if (enableOnline && !Sync.activeRoomId) {
+  }
+
+  function openNewGameModal(openHostSub = false) {
+    syncDraftFromGame();
+    renderSetupModal();
+    updateRoomModalUI();
+    openModal('newGameModal');
+    if (openHostSub) openHostGameModal();
+  }
+
+  function openHostGameModal() {
+    if (!Sync.activeRoomId) {
       Sync.createRoom();
     }
     renderSetupModal();
     updateRoomModalUI();
-    openModal('newGameModal');
+    openModal('hostGameModal');
+  }
+
+  function openMatchOptionsModal() {
+    renderSetupModal();
+    openModal('matchOptionsModal');
   }
 
   function openJoinGameModal() {
@@ -4697,13 +4769,12 @@
       sl.appendChild(row);
     }
 
-    // 4. Collapsible Match Options (Target Score + Bot Difficulty only if bots present)
+    // 4. Match Options summary & sub-window controls
     const targetObj = vMeta.targets.find((t) => t.v === SetupDraft.targetScore) || vMeta.targets[0];
     const diffLabel = SetupDraft.botDifficulty === 'casual' ? 'Casual' : 'Pro';
-    const summaryParts = [targetObj ? targetObj.l : String(SetupDraft.targetScore)];
+    const summaryParts = [`${vMeta.targetLabel}: ${targetObj ? targetObj.l : String(SetupDraft.targetScore)}`];
     if (hasBots) summaryParts.push(`Bot: ${diffLabel}`);
-    $('matchOptionsSummary').textContent = `${summaryParts.join(' · ')} ${SetupDraft.optionsExpanded ? '▴' : '▾'}`;
-    $('matchOptionsBody').classList.toggle('hidden', !SetupDraft.optionsExpanded);
+    $('matchOptionsSummary').textContent = summaryParts.join(' · ');
 
     $('targetScoreLabel').textContent = vMeta.targetLabel;
     const tr = $('setupTargetRow');
@@ -4718,23 +4789,45 @@
     }
 
     $('setupBotDiffGroup').classList.toggle('hidden', !hasBots);
+    $('noBotsHint').classList.toggle('hidden', hasBots);
     $('setupBotDiffRow').querySelectorAll('[data-diff]').forEach((b) => {
       b.classList.toggle('active', SetupDraft.botDifficulty === b.dataset.diff);
       b.onclick = () => { SetupDraft.botDifficulty = b.dataset.diff; renderSetupModal(); };
     });
   }
 
+  function renderHostRosterPreview() {
+    const box = $('hostSeatsPreview');
+    if (!box) return;
+    box.innerHTML = '';
+    const count = SetupDraft.playerCount;
+    for (let i = 0; i < count; i++) {
+      const s = SetupDraft.seats[i] || { name: `Player ${i + 1}`, isAI: false, claimedByDeviceId: null };
+      const isHostSeat = i === 0;
+      const isJoined = !isHostSeat && !s.isAI && !!s.claimedByDeviceId;
+      const tag = isHostSeat ? 'Host' : (s.isAI ? 'Bot' : (isJoined ? 'Joined' : 'Open'));
+      const chip = document.createElement('span');
+      chip.className = 'host-seat-chip' + ((isHostSeat || isJoined) ? ' is-live' : '');
+      chip.innerHTML = `<span>${escHtml(s.name)}</span><span class="chip-tag">${tag}</span>`;
+      box.appendChild(chip);
+    }
+  }
+
   function updateRoomModalUI() {
     const connected = !!Sync.activeRoomId;
-    const toggleBtn = $('toggleOnlineHost');
-    if (toggleBtn) toggleBtn.classList.toggle('on', connected);
+    const hostBtn = $('btnOpenHostModal');
+    if (hostBtn) hostBtn.classList.toggle('is-hosting', connected);
+    const chip = $('hostStatusChip');
+    if (chip) {
+      chip.classList.toggle('hidden', !connected);
+      if (connected) chip.textContent = Sync.activeRoomId;
+    }
     const sub = $('onlineHostSub');
     if (sub) {
       sub.textContent = connected
-        ? `Online room ${Sync.activeRoomId} active (${Sync.peers.size + 1} device${Sync.peers.size ? 's' : ''})`
-        : 'Single device or vs. Computer';
+        ? `Hosting room ${Sync.activeRoomId} · ${Sync.peers.size + 1} device${Sync.peers.size ? 's' : ''}`
+        : 'Invite players on other devices';
     }
-    $('roomConnectedBox').classList.toggle('hidden', !connected);
     if (connected) {
       $('roomCodeDisplay').textContent = Sync.activeRoomId;
       const qrBox = $('qrContainer');
@@ -4744,7 +4837,13 @@
         const url = `${location.origin}${location.pathname}#room=${Sync.activeRoomId}&t=${Sync.sessionToken}`;
         QRCodeGen.drawToCanvas($('qrCanvas'), url);
       }
+      renderHostRosterPreview();
     }
+    // Context-aware Host modal footer buttons: if opened from live HUD (without New Game underneath), show Done & hide Start Room Game unless in setup
+    const newGameOpen = !$('newGameModal').classList.contains('hidden');
+    const inSetup = Game && Game.gameStatus === 'setup';
+    $('btnHostBack').textContent = newGameOpen ? 'Back' : 'Done';
+    $('btnHostStartGame').classList.toggle('hidden', !(newGameOpen || inSetup));
 
     // Update dedicated Join Game modal state
     const jConn = $('joinConnectedBox');
@@ -5062,8 +5161,12 @@
     });
 
     $('syncPill').onclick = () => {
-      if (isOnlineRoom() && isHostDevice()) openNewGameModal(false);
-      else openJoinGameModal();
+      if (isOnlineRoom() && isHostDevice()) {
+        syncDraftFromGame();
+        openHostGameModal();
+      } else {
+        openJoinGameModal();
+      }
     };
     $('btnScorecard').onclick = () => $('scorecardDrawer').classList.toggle('hidden');
     $('btnCloseScorecard').onclick = () => $('scorecardDrawer').classList.add('hidden');
@@ -5125,21 +5228,9 @@
     };
     $('btnCurtainUndo').onclick = performUndo;
 
-    // Streamlined New Game & Dedicated Join Game Modals
-    $('btnMatchOptions').onclick = () => {
-      SetupDraft.optionsExpanded = !SetupDraft.optionsExpanded;
-      renderSetupModal();
-    };
-    $('toggleOnlineHost').onclick = () => {
-      if (Sync.activeRoomId) {
-        Sync.disconnect(true);
-        showToast('Switched to This Device');
-      } else {
-        Sync.createRoom();
-      }
-      renderSetupModal();
-      updateRoomModalUI();
-    };
+    // Streamlined New Game, Host a Game, Match Options & Join Game Modals
+    $('btnOpenHostModal').onclick = () => openHostGameModal();
+    $('btnOpenMatchOptions').onclick = () => openMatchOptionsModal();
     const submitJoinCode = () => {
       const val = $('joinCodeInput').value;
       if (val.trim().length < 4) { showToast('Enter a 4-character room code'); return; }
@@ -5179,11 +5270,12 @@
     };
     $('btnDisconnectRoom').onclick = () => {
       Sync.disconnect(true);
-      showToast('Left online room');
+      closeModal('hostGameModal');
       renderSetupModal();
+      showToast('Stopped hosting online room');
     };
 
-    $('btnStartGame').onclick = () => {
+    const startGameFromSetup = () => {
       stopQRScanner();
       const cfg = readSetupModalConfig();
       if (isOnlineRoom()) {
@@ -5214,12 +5306,16 @@
       selectedTileId = null;
       inspectingTable = false;
       privacyUnlockedForKey = `${Game.roundNumber}_${Game.commitSeq}_${Game.activePlayerIndex}`;
+      closeModal('hostGameModal');
+      closeModal('matchOptionsModal');
       closeModal('newGameModal');
       fitTable(true);
       renderAll();
       maybeShowFirstTimeRules(Game.variant);
       scheduleBotIfNeeded();
     };
+    $('btnStartGame').onclick = startGameFromSetup;
+    $('btnHostStartGame').onclick = startGameFromSetup;
 
     // Round End & Inspect Table
     const enterInspect = () => {
@@ -5278,6 +5374,8 @@
       const tag = document.activeElement && document.activeElement.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (document.activeElement && document.activeElement.isContentEditable)) return;
       if (e.key === 'Escape') {
+        if (!$('hostGameModal').classList.contains('hidden')) { closeModal('hostGameModal'); return; }
+        if (!$('matchOptionsModal').classList.contains('hidden')) { closeModal('matchOptionsModal'); return; }
         closeMainMenu();
         stopQRScanner();
         ['newGameModal', 'joinGameModal', 'rulesModal', 'appearanceModal', 'installModal'].forEach(closeModal);
