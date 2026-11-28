@@ -459,17 +459,47 @@
     }
     .seg-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-    .variant-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-    @media (max-width: 420px) { .variant-grid { grid-template-columns: 1fr; } }
-    .variant-card {
-      padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border);
-      background: var(--bg-card); color: var(--text-main); text-align: left; cursor: pointer;
+    .variant-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    @media (max-width: 360px) { .variant-grid { grid-template-columns: repeat(2, 1fr); } }
+    .variant-pill {
+      padding: 8px 6px; border-radius: 9px; border: 1px solid var(--border);
+      background: var(--bg-card); color: var(--text-main); text-align: center;
+      font-size: 12.5px; font-weight: 700; cursor: pointer;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      transition: background 0.12s, border-color 0.12s;
     }
-    .variant-card.active {
-      border: 2px solid var(--accent); background: var(--accent-soft);
+    .variant-pill.active {
+      border-color: var(--accent); background: var(--accent); color: var(--accent-text);
     }
-    .variant-card .v-name { font-size: 13px; font-weight: 800; }
-    .variant-card .v-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .variant-summary {
+      font-size: 11.5px; color: var(--text-muted); margin-top: 5px; line-height: 1.35;
+    }
+    .players-header-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+      margin-bottom: 7px;
+    }
+    .players-header-row .seg-row { flex-wrap: nowrap; }
+    .players-header-row .seg-btn { min-width: 38px; padding: 5px 10px; font-size: 12px; }
+    .accordion-btn {
+      width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--bg-card); color: var(--text-main); font-size: 12.5px; font-weight: 700;
+      cursor: pointer;
+    }
+    .accordion-summary { font-size: 11.5px; color: var(--text-muted); font-weight: 600; }
+    .accordion-body {
+      margin-top: 8px; padding: 10px; border-radius: 10px;
+      background: var(--bg-input); border: 1px solid var(--border);
+    }
+    .accordion-body.hidden { display: none; }
+    .hidden { display: none !important; }
+    .join-divider {
+      display: flex; align-items: center; gap: 10px; margin: 12px 0;
+      font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .join-divider::before, .join-divider::after {
+      content: ""; flex: 1; height: 1px; background: var(--border);
+    }
 
     .seat-row {
       display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
@@ -702,50 +732,62 @@
   <!-- Lean Main Menu -->
   <nav id="mainMenu" class="hidden" aria-label="Main Menu">
     <button class="menu-item" id="menuNewGame">✨ New Game</button>
+    <button class="menu-item" id="menuJoinGame">🔗 Join Game</button>
     <button class="menu-item hidden" id="menuResume">▶ Resume Game</button>
     <button class="menu-item" id="menuRules">📖 Rules / How to Play</button>
     <button class="menu-item hidden" id="menuChangeSeat">🪑 Change My Seat</button>
     <button class="menu-item" id="menuAppearance">🎨 Appearance</button>
     <button class="menu-item" id="menuInstall">📲 Install App</button>
     <div class="menu-sep"></div>
-    <div class="menu-footer">Dominoes Engine · v1.0.3</div>
+    <div class="menu-footer">Dominoes Engine · v1.1.0</div>
   </nav>
 
-  <!-- Unified Tabbed New Game & Online Room Modal -->
+  <!-- Streamlined New Game Modal (Game Type -> Players & Seats -> Optional Online & Match Options) -->
   <div id="newGameModal" class="modal-backdrop hidden">
     <div class="modal-card">
       <div class="modal-head">
-        <div class="modal-title">✨ New Game & Online Room</div>
+        <div class="modal-title" id="newGameModalTitle">✨ New Game</div>
         <button class="modal-close" data-close="newGameModal">✕</button>
       </div>
       <div class="modal-body">
-        <div class="tab-bar">
-          <button class="tab-btn active" id="tabLocalBtn">🎮 This Device</button>
-          <button class="tab-btn" id="tabOnlineBtn">🌐 Online Room</button>
+        <!-- 1. Game Type (Compact 2-row pill grid) -->
+        <div class="field-group">
+          <label class="field-label">Game Type</label>
+          <div class="variant-grid" id="setupVariantGrid"></div>
+          <div class="variant-summary" id="setupVariantSummary"></div>
         </div>
 
-        <!-- Online Room Section -->
-        <div id="onlineRoomPane" class="hidden">
-          <div id="qrScannerBox" class="hidden">
-            <video id="qrVideo" playsinline muted></video>
-            <div style="padding:6px 10px;display:flex;justify-content:space-between;align-items:center;background:var(--bg-panel);">
-              <span style="font-size:12px;">Point camera at room QR code</span>
-              <button id="btnStopScan" class="btn sm">Close</button>
+        <!-- 2. Players & Seats (Always above the fold) -->
+        <div class="field-group">
+          <div class="players-header-row">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="field-label" style="margin:0;">Players</span>
+              <div class="seg-row" id="setupCountRow">
+                <button class="seg-btn" data-count="2">2</button>
+                <button class="seg-btn" data-count="3">3</button>
+                <button class="seg-btn" data-count="4">4</button>
+              </div>
+            </div>
+            <div id="setupTeamWrap" class="hidden">
+              <div class="seg-row" id="setupTeamRow">
+                <button class="seg-btn" data-team="individual">Solo</button>
+                <button class="seg-btn" data-team="partnerships">2v2 Teams</button>
+              </div>
             </div>
           </div>
+          <div id="setupSeatsList"></div>
+        </div>
 
-          <div id="roomDisconnectedBox" class="room-panel">
-            <div style="display:flex;gap:8px;margin-bottom:10px;">
-              <button id="btnCreateRoom" class="btn primary" style="flex:1;">Create Online Room</button>
+        <!-- 3. Play Across Devices (Online Room Toggle + Host Invite Card) -->
+        <div class="field-group" style="margin-bottom:10px;">
+          <div class="toggle-row" style="margin-bottom:0;">
+            <div>
+              <div style="font-size:13px;font-weight:700;">🌐 Play Across Devices</div>
+              <div style="font-size:11px;color:var(--text-muted);" id="onlineHostSub">Single device or vs. Computer</div>
             </div>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <input id="joinCodeInput" class="text-input" placeholder="4-char code (e.g. K7M2)" maxlength="4" style="text-transform:uppercase;letter-spacing:0.12em;font-weight:800;" />
-              <button id="btnJoinCode" class="btn">Join</button>
-              <button id="btnScanQR" class="btn" title="Scan QR Code">📷</button>
-            </div>
+            <button id="toggleOnlineHost" class="switch-btn" type="button" aria-label="Toggle Online Room"></button>
           </div>
-
-          <div id="roomConnectedBox" class="room-panel hidden">
+          <div id="roomConnectedBox" class="room-panel hidden" style="margin-top:8px;margin-bottom:0;">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
               <div>
                 <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:700;">Room Code</div>
@@ -759,59 +801,86 @@
               </div>
             </div>
             <div id="qrContainer" class="qr-wrap">
-              <canvas id="qrCanvas" width="180" height="180"></canvas>
-              <div style="font-size:11.5px;color:#222;font-weight:600;">Scan to join this table</div>
+              <canvas id="qrCanvas" width="176" height="176"></canvas>
+              <div style="font-size:11.5px;color:#222;font-weight:600;">Friends scan or use Menu → Join Game</div>
             </div>
             <div class="relay-line" id="relayStatusLine">Connecting relays...</div>
           </div>
         </div>
 
-        <!-- Shared Game Setup Controls -->
-        <div class="field-group">
-          <label class="field-label">Game Variant (Double-6)</label>
-          <div class="variant-grid" id="setupVariantGrid"></div>
-        </div>
-
-        <div class="field-group" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <div>
-            <label class="field-label">Players</label>
-            <div class="seg-row" id="setupCountRow">
-              <button class="seg-btn" data-count="2">2</button>
-              <button class="seg-btn" data-count="3">3</button>
-              <button class="seg-btn" data-count="4">4</button>
+        <!-- 4. Collapsible Match Options (Target Score & Bot Difficulty) -->
+        <div class="field-group" style="margin-bottom:0;">
+          <button id="btnMatchOptions" class="accordion-btn" type="button">
+            <span>⚙ Match Options</span>
+            <span class="accordion-summary" id="matchOptionsSummary">Target: 100 · Bot: Pro ▾</span>
+          </button>
+          <div id="matchOptionsBody" class="accordion-body hidden">
+            <div class="field-group" style="margin-bottom:10px;">
+              <label class="field-label" id="targetScoreLabel">Match Target</label>
+              <div class="seg-row" id="setupTargetRow"></div>
+            </div>
+            <div id="setupBotDiffGroup" class="field-group" style="margin-bottom:0;">
+              <label class="field-label">Bot Difficulty</label>
+              <div class="seg-row" id="setupBotDiffRow">
+                <button class="seg-btn" data-diff="casual">Casual</button>
+                <button class="seg-btn" data-diff="pro">Pro</button>
+              </div>
             </div>
           </div>
-          <div>
-            <label class="field-label">Table Mode</label>
-            <div class="seg-row" id="setupTeamRow">
-              <button class="seg-btn" data-team="individual">Individual</button>
-              <button class="seg-btn" data-team="partnerships">2v2 Teams</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="field-group" style="display:grid;grid-template-columns:1.25fr 0.75fr;gap:10px;">
-          <div>
-            <label class="field-label" id="targetScoreLabel">Match Target</label>
-            <div class="seg-row" id="setupTargetRow"></div>
-          </div>
-          <div>
-            <label class="field-label">Bot Difficulty</label>
-            <div class="seg-row" id="setupBotDiffRow">
-              <button class="seg-btn" data-diff="casual">Casual</button>
-              <button class="seg-btn" data-diff="pro">Pro</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">Seats (Tap Human / Bot to mix)</label>
-          <div id="setupSeatsList"></div>
         </div>
       </div>
       <div class="modal-foot">
         <button class="btn" data-close="newGameModal">Cancel</button>
         <button class="btn primary" id="btnStartGame">Start Game</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated Join Game Modal (Direct 1-Tap Entry from Main Menu) -->
+  <div id="joinGameModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="modal-title" id="joinGameModalTitle">🔗 Join Online Game</div>
+        <button class="modal-close" data-close="joinGameModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="qrScannerBox" class="hidden">
+          <video id="qrVideo" playsinline muted></video>
+          <div style="padding:6px 10px;display:flex;justify-content:space-between;align-items:center;background:var(--bg-panel);">
+            <span style="font-size:12px;">Point camera at host's room QR code</span>
+            <button id="btnStopScan" class="btn sm">Close</button>
+          </div>
+        </div>
+
+        <!-- Active Room Status View (when already connected to a room) -->
+        <div id="joinConnectedBox" class="room-panel hidden">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+            <div>
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:700;">Connected Room</div>
+              <div class="room-code-big" id="joinRoomCodeDisplay">----</div>
+            </div>
+            <button id="btnJoinLeaveRoom" class="btn sm danger">Leave Room</button>
+          </div>
+          <div class="relay-line" id="joinRelayStatusLine" style="margin-top:0;margin-bottom:10px;">Connected</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <button id="btnJoinChangeSeat" class="btn sm" style="flex:1;">🪑 Change My Seat</button>
+            <button id="btnJoinCopyLink" class="btn sm" style="flex:1;">Copy Invite Link</button>
+          </div>
+        </div>
+
+        <!-- Join Controls (QR Scan + 4-Char Code) -->
+        <div id="joinFormBox">
+          <button id="btnScanQR" class="btn primary" style="width:100%;padding:11px 14px;font-size:14px;">📷 Scan Host's QR Code</button>
+          <div class="join-divider">or enter 4-character room code</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input id="joinCodeInput" class="text-input" placeholder="e.g. K7M2" maxlength="4" autocomplete="off" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:0.16em;font-weight:800;text-align:center;font-size:16px;" />
+            <button id="btnJoinCode" class="btn primary" style="white-space:nowrap;">Join Room</button>
+          </div>
+          <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--text-muted);">
+            <span>Hosting your own table instead?</span>
+            <button id="btnSwitchToHost" class="btn sm">Host New Game</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -928,7 +997,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v1.0.3';
+  const APP_VERSION = 'v1.1.0';
   const DEVICE_ID = (() => {
     let id = localStorage.getItem('dominoes_device_id_v1');
     if (!id) {
@@ -3669,7 +3738,9 @@
 
       // Open Seat Picker automatically for newly joining guest
       if (!Sync.isHost && mySeatIdx < 0 && !isSpectator) {
+        stopQRScanner();
         closeModal('newGameModal');
+        closeModal('joinGameModal');
         openSeatPickerModal();
       }
 
@@ -4464,14 +4535,14 @@
     }
   }
 
-  // Unified Tabbed New Game & Online Room Modal
+  // Streamlined New Game Modal & Dedicated Join Game Modal
   let SetupDraft = {
-    tab: 'local',
     variant: 'draw',
     playerCount: 2,
     teamMode: 'individual',
     targetScore: 100,
     botDifficulty: 'pro',
+    optionsExpanded: false,
     seats: [
       { name: 'Player 1', isAI: false, claimedByDeviceId: DEVICE_ID },
       { name: 'DominoBot', isAI: true, claimedByDeviceId: null },
@@ -4506,7 +4577,7 @@
     if (!$('newGameModal').classList.contains('hidden')) renderSetupModal();
   }
 
-  function openNewGameModal(tab = 'local') {
+  function openNewGameModal(enableOnline = false) {
     if (Game) {
       SetupDraft.variant = Game.variant;
       SetupDraft.playerCount = Game.players.length;
@@ -4521,26 +4592,39 @@
         };
       }
     }
-    SetupDraft.tab = tab;
+    SetupDraft.optionsExpanded = false;
+    if (enableOnline && !Sync.activeRoomId) {
+      Sync.createRoom();
+    }
     renderSetupModal();
     updateRoomModalUI();
     openModal('newGameModal');
   }
 
-  function renderSetupModal() {
-    const isOnlineTab = SetupDraft.tab === 'online';
-    $('tabLocalBtn').classList.toggle('active', !isOnlineTab);
-    $('tabOnlineBtn').classList.toggle('active', isOnlineTab);
-    $('onlineRoomPane').classList.toggle('hidden', !isOnlineTab);
-    $('btnStartGame').textContent = isOnlineRoom() ? 'Start Room Game' : 'Start Game';
+  function openJoinGameModal() {
+    stopQRScanner();
+    updateRoomModalUI();
+    openModal('joinGameModal');
+    if (!Sync.activeRoomId) {
+      const inp = $('joinCodeInput');
+      if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 60); }
+    }
+  }
 
-    // Variants grid
+  function renderSetupModal() {
+    const hostingOnline = isOnlineRoom();
+    $('newGameModalTitle').textContent = hostingOnline ? `✨ New Room Game (${Sync.activeRoomId})` : '✨ New Game';
+    $('btnStartGame').textContent = hostingOnline ? 'Start Room Game' : 'Start Game';
+
+    // 1. Compact 2-row Game Type pill grid
     const vg = $('setupVariantGrid');
     vg.innerHTML = '';
     for (const v of Object.values(VARIANTS)) {
       const btn = document.createElement('button');
-      btn.className = 'variant-card' + (SetupDraft.variant === v.id ? ' active' : '');
-      btn.innerHTML = `<div class="v-name">${escHtml(v.name)}</div><div class="v-sub">${escHtml(v.sub)}</div>`;
+      btn.type = 'button';
+      btn.className = 'variant-pill' + (SetupDraft.variant === v.id ? ' active' : '');
+      btn.textContent = v.short;
+      btn.title = v.name;
       btn.onclick = () => {
         SetupDraft.variant = v.id;
         if (!v.supportsTeams) SetupDraft.teamMode = 'individual';
@@ -4549,8 +4633,10 @@
       };
       vg.appendChild(btn);
     }
+    const vMeta = VARIANTS[SetupDraft.variant] || VARIANTS.draw;
+    $('setupVariantSummary').textContent = `${vMeta.name} — ${vMeta.sub}`;
 
-    // Player count
+    // 2. Player count + contextual 2v2 Teams toggle (only shown when 4 players & variant supports teams)
     $('setupCountRow').querySelectorAll('[data-count]').forEach((b) => {
       const c = Number(b.dataset.count);
       b.classList.toggle('active', SetupDraft.playerCount === c);
@@ -4561,49 +4647,31 @@
       };
     });
 
-    // Team mode (Individual vs 2v2 Partnerships)
-    const vMeta = VARIANTS[SetupDraft.variant] || VARIANTS.draw;
     const allowTeams = SetupDraft.playerCount === 4 && vMeta.supportsTeams;
     if (!allowTeams) SetupDraft.teamMode = 'individual';
+    $('setupTeamWrap').classList.toggle('hidden', !allowTeams);
     $('setupTeamRow').querySelectorAll('[data-team]').forEach((b) => {
       const tm = b.dataset.team;
-      b.disabled = tm === 'partnerships' && !allowTeams;
       b.classList.toggle('active', SetupDraft.teamMode === tm);
       b.onclick = () => { SetupDraft.teamMode = tm; renderSetupModal(); };
     });
 
-    // Target Score presets
-    $('targetScoreLabel').textContent = vMeta.targetLabel;
-    const tr = $('setupTargetRow');
-    tr.innerHTML = '';
-    for (const t of vMeta.targets) {
-      const b = document.createElement('button');
-      b.className = 'seg-btn' + (SetupDraft.targetScore === t.v ? ' active' : '');
-      b.textContent = t.l;
-      b.onclick = () => { SetupDraft.targetScore = t.v; renderSetupModal(); };
-      tr.appendChild(b);
-    }
-
-    // Per-Room Bot Difficulty
-    $('setupBotDiffRow').querySelectorAll('[data-diff]').forEach((b) => {
-      b.classList.toggle('active', SetupDraft.botDifficulty === b.dataset.diff);
-      b.onclick = () => { SetupDraft.botDifficulty = b.dataset.diff; renderSetupModal(); };
-    });
-
-    // Seats List
+    // 3. Seats List (immediately visible without scrolling!)
     const sl = $('setupSeatsList');
     sl.innerHTML = '';
+    let hasBots = false;
     for (let i = 0; i < SetupDraft.playerCount; i++) {
       if (!SetupDraft.seats[i]) SetupDraft.seats[i] = { name: `Player ${i + 1}`, isAI: false, claimedByDeviceId: null };
       const s = SetupDraft.seats[i];
-      if (i === 0 && isOnlineRoom()) s.isAI = false; // Host Seat 0 stays Human
+      if (i === 0 && hostingOnline) s.isAI = false; // Host Seat 0 stays Human
+      if (s.isAI) hasBots = true;
       const row = document.createElement('div');
       row.className = 'seat-row';
 
       const teamBadge = SetupDraft.teamMode === 'partnerships'
         ? `<span class="seat-badge ${i % 2 === 0 ? 'team-a' : 'team-b'}">${i % 2 === 0 ? 'Team A' : 'Team B'}</span>` : '';
       let onlineBadge = '';
-      if (isOnlineRoom()) {
+      if (hostingOnline) {
         if (i === 0) onlineBadge = `<span class="seat-badge live">Host</span>`;
         else if (s.isAI) onlineBadge = `<span class="seat-badge">Bot</span>`;
         else if (s.claimedByDeviceId) onlineBadge = `<span class="seat-badge live">Joined</span>`;
@@ -4614,7 +4682,7 @@
         <span class="seat-idx">${i + 1}</span>
         <input class="seat-name-input" value="${escHtml(s.name)}" maxlength="20" />
         ${teamBadge}
-        <button class="seat-type-btn ${s.isAI ? 'is-bot' : ''}" ${i === 0 && isOnlineRoom() ? 'disabled' : ''}>${s.isAI ? '🤖 Bot' : '👤 Human'}</button>
+        <button type="button" class="seat-type-btn ${s.isAI ? 'is-bot' : ''}" ${i === 0 && hostingOnline ? 'disabled' : ''}>${s.isAI ? '🤖 Bot' : '👤 Human'}</button>
         ${onlineBadge}
       `;
       const inp = row.querySelector('input');
@@ -4628,11 +4696,44 @@
       };
       sl.appendChild(row);
     }
+
+    // 4. Collapsible Match Options (Target Score + Bot Difficulty only if bots present)
+    const targetObj = vMeta.targets.find((t) => t.v === SetupDraft.targetScore) || vMeta.targets[0];
+    const diffLabel = SetupDraft.botDifficulty === 'casual' ? 'Casual' : 'Pro';
+    const summaryParts = [targetObj ? targetObj.l : String(SetupDraft.targetScore)];
+    if (hasBots) summaryParts.push(`Bot: ${diffLabel}`);
+    $('matchOptionsSummary').textContent = `${summaryParts.join(' · ')} ${SetupDraft.optionsExpanded ? '▴' : '▾'}`;
+    $('matchOptionsBody').classList.toggle('hidden', !SetupDraft.optionsExpanded);
+
+    $('targetScoreLabel').textContent = vMeta.targetLabel;
+    const tr = $('setupTargetRow');
+    tr.innerHTML = '';
+    for (const t of vMeta.targets) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'seg-btn' + (SetupDraft.targetScore === t.v ? ' active' : '');
+      b.textContent = t.l;
+      b.onclick = () => { SetupDraft.targetScore = t.v; renderSetupModal(); };
+      tr.appendChild(b);
+    }
+
+    $('setupBotDiffGroup').classList.toggle('hidden', !hasBots);
+    $('setupBotDiffRow').querySelectorAll('[data-diff]').forEach((b) => {
+      b.classList.toggle('active', SetupDraft.botDifficulty === b.dataset.diff);
+      b.onclick = () => { SetupDraft.botDifficulty = b.dataset.diff; renderSetupModal(); };
+    });
   }
 
   function updateRoomModalUI() {
     const connected = !!Sync.activeRoomId;
-    $('roomDisconnectedBox').classList.toggle('hidden', connected);
+    const toggleBtn = $('toggleOnlineHost');
+    if (toggleBtn) toggleBtn.classList.toggle('on', connected);
+    const sub = $('onlineHostSub');
+    if (sub) {
+      sub.textContent = connected
+        ? `Online room ${Sync.activeRoomId} active (${Sync.peers.size + 1} device${Sync.peers.size ? 's' : ''})`
+        : 'Single device or vs. Computer';
+    }
     $('roomConnectedBox').classList.toggle('hidden', !connected);
     if (connected) {
       $('roomCodeDisplay').textContent = Sync.activeRoomId;
@@ -4643,19 +4744,38 @@
         const url = `${location.origin}${location.pathname}#room=${Sync.activeRoomId}&t=${Sync.sessionToken}`;
         QRCodeGen.drawToCanvas($('qrCanvas'), url);
       }
-      updateRelayStatusUI();
     }
+
+    // Update dedicated Join Game modal state
+    const jConn = $('joinConnectedBox');
+    const jForm = $('joinFormBox');
+    if (jConn && jForm) {
+      jConn.classList.toggle('hidden', !connected);
+      jForm.classList.toggle('hidden', connected);
+      $('joinGameModalTitle').textContent = connected ? `🌐 Room ${Sync.activeRoomId}` : '🔗 Join Online Game';
+      if (connected) {
+        $('joinRoomCodeDisplay').textContent = Sync.activeRoomId;
+      }
+    }
+    updateRelayStatusUI();
   }
 
   function updateRelayStatusUI() {
     const el = $('relayStatusLine');
-    if (!el) return;
-    if (!Sync.activeRoomId) { el.textContent = ''; return; }
+    const jel = $('joinRelayStatusLine');
+    if (!Sync.activeRoomId) {
+      if (el) el.textContent = '';
+      if (jel) jel.textContent = '';
+      renderHUD();
+      return;
+    }
     const up = [];
     for (const [name, entry] of Sync.sockets.entries()) if (entry.ready) up.push(name);
     let rtcCount = 0;
     for (const p of Sync.peers.values()) if (p.dc && p.dc.readyState === 'open') rtcCount++;
-    el.textContent = `Relays: ${up.length ? up.join(', ') : 'connecting...'} · Peers: ${Sync.peers.size} (${rtcCount} P2P)`;
+    const txt = `Relays: ${up.length ? up.join(', ') : 'connecting...'} · Peers: ${Sync.peers.size} (${rtcCount} P2P)`;
+    if (el) el.textContent = txt;
+    if (jel) jel.textContent = txt;
     renderHUD();
   }
 
@@ -4926,7 +5046,7 @@
     // Modal close buttons & backdrop click
     document.querySelectorAll('[data-close]').forEach((b) => {
       b.addEventListener('click', () => {
-        if (b.dataset.close === 'newGameModal') stopQRScanner();
+        if (b.dataset.close === 'newGameModal' || b.dataset.close === 'joinGameModal') stopQRScanner();
         closeModal(b.dataset.close);
       });
     });
@@ -4941,7 +5061,10 @@
       if (!m.classList.contains('hidden') && !m.contains(e.target) && e.target !== $('btnMenu')) m.classList.add('hidden');
     });
 
-    $('syncPill').onclick = () => openNewGameModal('online');
+    $('syncPill').onclick = () => {
+      if (isOnlineRoom() && isHostDevice()) openNewGameModal(false);
+      else openJoinGameModal();
+    };
     $('btnScorecard').onclick = () => $('scorecardDrawer').classList.toggle('hidden');
     $('btnCloseScorecard').onclick = () => $('scorecardDrawer').classList.add('hidden');
     $('btnRules').onclick = () => openRulesModal(Game ? Game.variant : 'draw', false);
@@ -4951,7 +5074,8 @@
     $('btnHaptics').onclick = () => { Prefs.haptics = !Prefs.haptics; savePrefs(); applyPrefs(); if (Prefs.haptics) AudioFX.tap(); };
 
     // Main Menu items
-    $('menuNewGame').onclick = () => { closeMainMenu(); openNewGameModal(isOnlineRoom() ? 'online' : 'local'); };
+    $('menuNewGame').onclick = () => { closeMainMenu(); openNewGameModal(false); };
+    $('menuJoinGame').onclick = () => { closeMainMenu(); openJoinGameModal(); };
     $('menuResume').onclick = () => { closeMainMenu(); };
     $('menuRules').onclick = () => { closeMainMenu(); openRulesModal(Game ? Game.variant : 'draw', false); };
     $('menuChangeSeat').onclick = () => { closeMainMenu(); openSeatPickerModal(); };
@@ -5001,24 +5125,63 @@
     };
     $('btnCurtainUndo').onclick = performUndo;
 
-    // New Game & Online Room Modal
-    $('tabLocalBtn').onclick = () => { SetupDraft.tab = 'local'; renderSetupModal(); };
-    $('tabOnlineBtn').onclick = () => { SetupDraft.tab = 'online'; renderSetupModal(); updateRoomModalUI(); };
-    $('btnCreateRoom').onclick = () => Sync.createRoom();
-    $('btnJoinCode').onclick = () => Sync.joinRoom($('joinCodeInput').value);
+    // Streamlined New Game & Dedicated Join Game Modals
+    $('btnMatchOptions').onclick = () => {
+      SetupDraft.optionsExpanded = !SetupDraft.optionsExpanded;
+      renderSetupModal();
+    };
+    $('toggleOnlineHost').onclick = () => {
+      if (Sync.activeRoomId) {
+        Sync.disconnect(true);
+        showToast('Switched to This Device');
+      } else {
+        Sync.createRoom();
+      }
+      renderSetupModal();
+      updateRoomModalUI();
+    };
+    const submitJoinCode = () => {
+      const val = $('joinCodeInput').value;
+      if (val.trim().length < 4) { showToast('Enter a 4-character room code'); return; }
+      Sync.joinRoom(val);
+    };
+    $('btnJoinCode').onclick = submitJoinCode;
+    $('joinCodeInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitJoinCode(); }
+    });
     $('btnScanQR').onclick = startQRScanner;
     $('btnStopScan').onclick = stopQRScanner;
-    $('btnToggleQR').onclick = () => { Sync.qrAutoCollapsed = !Sync.qrAutoCollapsed; updateRoomModalUI(); };
-    $('btnCopyLink').onclick = () => {
+    $('btnSwitchToHost').onclick = () => {
+      stopQRScanner();
+      closeModal('joinGameModal');
+      openNewGameModal(true);
+    };
+    $('btnJoinChangeSeat').onclick = () => {
+      closeModal('joinGameModal');
+      openSeatPickerModal();
+    };
+    const copyRoomInviteLink = () => {
       const url = `${location.origin}${location.pathname}#room=${Sync.activeRoomId}&t=${Sync.sessionToken}`;
       navigator.clipboard.writeText(url).then(() => showToast('Room link copied!')).catch(() => showToast(`Code: ${Sync.activeRoomId}`));
     };
+    $('btnJoinCopyLink').onclick = copyRoomInviteLink;
+    $('btnJoinLeaveRoom').onclick = () => {
+      Sync.disconnect(true);
+      showToast('Left online room');
+      updateRoomModalUI();
+    };
+    $('btnToggleQR').onclick = () => { Sync.qrAutoCollapsed = !Sync.qrAutoCollapsed; updateRoomModalUI(); };
+    $('btnCopyLink').onclick = copyRoomInviteLink;
     $('btnShareLink').onclick = () => {
       const url = `${location.origin}${location.pathname}#room=${Sync.activeRoomId}&t=${Sync.sessionToken}`;
       if (navigator.share) navigator.share({ title: 'Join my Dominoes table', text: `Room code: ${Sync.activeRoomId}`, url }).catch(() => {});
-      else navigator.clipboard.writeText(url).then(() => showToast('Room link copied!')).catch(() => {});
+      else copyRoomInviteLink();
     };
-    $('btnDisconnectRoom').onclick = () => { Sync.disconnect(true); showToast('Left online room'); };
+    $('btnDisconnectRoom').onclick = () => {
+      Sync.disconnect(true);
+      showToast('Left online room');
+      renderSetupModal();
+    };
 
     $('btnStartGame').onclick = () => {
       stopQRScanner();
@@ -5116,7 +5279,8 @@
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (document.activeElement && document.activeElement.isContentEditable)) return;
       if (e.key === 'Escape') {
         closeMainMenu();
-        ['newGameModal', 'rulesModal', 'appearanceModal', 'installModal'].forEach(closeModal);
+        stopQRScanner();
+        ['newGameModal', 'joinGameModal', 'rulesModal', 'appearanceModal', 'installModal'].forEach(closeModal);
         $('scorecardDrawer').classList.add('hidden');
       } else if (e.key === 'f' || e.key === 'F') {
         fitTable(false);
