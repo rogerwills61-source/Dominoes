@@ -93,7 +93,7 @@
       margin: 0; padding: 0; width: 100%; height: 100%; height: 100dvh; overflow: hidden;
       background: var(--bg-app); color: var(--text-main);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
-      user-select: none; -webkit-user-select: none; touch-action: none;
+      user-select: none; -webkit-user-select: none; overscroll-behavior: none;
     }
     button, input, select { font-family: inherit; }
 
@@ -292,19 +292,41 @@
       50% { box-shadow: 0 0 0 7px rgba(232, 185, 74, 0); }
     }
 
+    #handRackWrap {
+      position: relative; display: flex; align-items: center; width: 100%; min-width: 0;
+    }
     #handRack {
-      display: flex; align-items: center; gap: 7px;
-      overflow-x: auto; overflow-y: visible;
-      padding: 6px 4px 4px; min-height: 76px;
+      display: flex; align-items: center; gap: 7px; width: 100%;
+      overflow-x: auto; overflow-y: hidden;
+      -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+      padding: 12px 8px 6px; min-height: 88px;
       scrollbar-width: thin; touch-action: pan-x;
+    }
+    .rack-scroll-btn {
+      position: absolute; top: 50%; transform: translateY(-50%); z-index: 6;
+      width: 28px; height: 56px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--bg-panel); color: var(--text-main);
+      font-size: 14px; font-weight: 900; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.48); opacity: 0.94;
+    }
+    .rack-scroll-btn.left { left: 2px; }
+    .rack-scroll-btn.right { right: 2px; }
+    .rack-scroll-btn.hidden { display: none; }
+    .rack-scroll-btn.has-playable {
+      background: var(--accent); color: var(--accent-text); border-color: var(--accent);
+      animation: pulseGlow 1.5s infinite;
     }
     .rack-empty-msg {
       width: 100%; text-align: center; color: var(--text-muted); font-size: 13px; padding: 16px 0;
     }
     .rack-tile {
       position: relative; flex: 0 0 auto; width: 42px; height: 74px;
-      border-radius: 7px; cursor: pointer; touch-action: none;
+      border-radius: 7px; cursor: pointer; touch-action: pan-x;
       transition: transform 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
+    }
+    #handRack:not(.has-overflow) .rack-tile.playable {
+      touch-action: none;
     }
     .rack-tile canvas { width: 100%; height: 100%; display: block; pointer-events: none; }
     .rack-tile.playable {
@@ -663,7 +685,11 @@
           <button id="btnSortHand" class="dock-btn" title="Sort Hand by Pips">⇅ Sort</button>
         </div>
       </div>
-      <div id="handRack"></div>
+      <div id="handRackWrap">
+        <button id="btnRackLeft" class="rack-scroll-btn left hidden" type="button" aria-label="Scroll hand left">◀</button>
+        <div id="handRack"></div>
+        <button id="btnRackRight" class="rack-scroll-btn right hidden" type="button" aria-label="Scroll hand right">▶</button>
+      </div>
     </section>
   </div>
 
@@ -682,7 +708,7 @@
     <button class="menu-item" id="menuAppearance">🎨 Appearance</button>
     <button class="menu-item" id="menuInstall">📲 Install App</button>
     <div class="menu-sep"></div>
-    <div class="menu-footer">Dominoes Engine · v1.0.2</div>
+    <div class="menu-footer">Dominoes Engine · v1.0.3</div>
   </nav>
 
   <!-- Unified Tabbed New Game & Online Room Modal -->
@@ -902,7 +928,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v1.0.2';
+  const APP_VERSION = 'v1.0.3';
   const DEVICE_ID = (() => {
     let id = localStorage.getItem('dominoes_device_id_v1');
     if (!id) {
@@ -982,12 +1008,17 @@
     localStorage.setItem('dominoes_prefs_v1', JSON.stringify(Prefs));
   }
 
+  const FeltColors = { inner: '#155840', outer: '#07261b' };
+
   function applyPrefs() {
     document.documentElement.dataset.theme = Prefs.theme;
     document.documentElement.dataset.palette = Prefs.palette;
     const pal = PALETTES.find((p) => p.id === Prefs.palette) || PALETTES[0];
     const meta = $('metaThemeColor');
     if (meta) meta.setAttribute('content', Prefs.theme === 'light' ? pal.themeLight : pal.themeDark);
+    const cs = getComputedStyle(document.documentElement);
+    FeltColors.inner = cs.getPropertyValue('--felt-inner').trim() || '#155840';
+    FeltColors.outer = cs.getPropertyValue('--felt-outer').trim() || '#07261b';
     const btnS = $('btnSound');
     if (btnS) { btnS.textContent = Prefs.sound ? '🔊' : '🔇'; btnS.classList.toggle('is-off', !Prefs.sound); }
     const btnH = $('btnHaptics');
@@ -2782,9 +2813,8 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // 1. Felt Table Background
-    const cs = getComputedStyle(document.documentElement);
-    const feltIn = cs.getPropertyValue('--felt-inner').trim() || '#155840';
-    const feltOut = cs.getPropertyValue('--felt-outer').trim() || '#07261b';
+    const feltIn = FeltColors.inner;
+    const feltOut = FeltColors.outer;
     const grad = ctx.createRadialGradient(W * 0.5, H * 0.45, Math.min(W, H) * 0.08, W * 0.5, H * 0.5, Math.max(W, H) * 0.72);
     grad.addColorStop(0, feltIn);
     grad.addColorStop(1, feltOut);
@@ -3799,6 +3829,13 @@
     }
     Sync.broadcastState(Game.lastMoveEvent);
     renderAll();
+    if (seatIdx === getViewSeatIdx()) {
+      const rack = $('handRack');
+      if (rack) {
+        rack.scrollTo({ left: rack.scrollWidth, behavior: 'smooth' });
+        setTimeout(updateRackScrollUI, 260);
+      }
+    }
 
     if (res.roundEnded) {
       AudioFX.win();
@@ -3898,11 +3935,30 @@
   /* =========================================================================
    * 12. TOUCH-DRAG, TAP-TO-PLACE, PAN & PINCH-TO-ZOOM
    * ========================================================================= */
-  const Drag = { active: false, tileId: null, pointerId: null, startX: 0, startY: 0, moved: false, snapEndId: null, sourceEl: null };
+  const Drag = { active: false, tileId: null, pointerId: null, startX: 0, startY: 0, moved: false, snapEndId: null, sourceEl: null, rackOverflows: false };
+
+  function cancelTileDrag() {
+    window.removeEventListener('pointermove', moveTileDrag);
+    window.removeEventListener('pointerup', endTileDrag);
+    window.removeEventListener('pointercancel', onTileDragCancel);
+    if (Drag.sourceEl) Drag.sourceEl.classList.remove('dragging-src');
+    Drag.active = false; Drag.tileId = null; Drag.pointerId = null;
+    Drag.moved = false; Drag.snapEndId = null; Drag.sourceEl = null; Drag.rackOverflows = false;
+    $('dragTileGhost').classList.add('hidden');
+  }
+
+  function onTileDragCancel(e) {
+    if (!Drag.active || e.pointerId !== Drag.pointerId) return;
+    cancelTileDrag();
+  }
 
   function startTileDrag(e, tile, playable) {
     if (!playable) return;
-    if (e.cancelable) e.preventDefault();
+    if (Drag.active) cancelTileDrag();
+    const rack = $('handRack');
+    const overflows = !!(rack && (rack.scrollWidth - rack.clientWidth > 4));
+    // Only preventDefault on pointerdown for mouse or non-overflowing rack so touch horizontal scroll stays 100% native!
+    if ((!overflows || e.pointerType === 'mouse') && e.cancelable) e.preventDefault();
     Drag.active = true;
     Drag.tileId = tile.id;
     Drag.pointerId = e.pointerId;
@@ -3911,6 +3967,7 @@
     Drag.moved = false;
     Drag.snapEndId = null;
     Drag.sourceEl = e.currentTarget;
+    Drag.rackOverflows = overflows;
 
     const ghost = $('dragTileGhost');
     const gctx = ghost.getContext('2d');
@@ -3922,21 +3979,37 @@
 
     window.addEventListener('pointermove', moveTileDrag, { passive: false });
     window.addEventListener('pointerup', endTileDrag);
-    window.addEventListener('pointercancel', endTileDrag);
+    window.addEventListener('pointercancel', onTileDragCancel);
   }
 
   function moveTileDrag(e) {
     if (!Drag.active || e.pointerId !== Drag.pointerId) return;
-    if (e.cancelable) e.preventDefault();
     const dx = e.clientX - Drag.startX, dy = e.clientY - Drag.startY;
-    if (!Drag.moved && Math.hypot(dx, dy) > 14) {
-      Drag.moved = true;
-      selectedTileId = Drag.tileId;
-      // Update source tile styling in place (NEVER rebuild #handRack mid-drag!)
-      if (Drag.sourceEl) Drag.sourceEl.classList.add('dragging-src');
-      $('dragTileGhost').classList.remove('hidden');
+    if (!Drag.moved) {
+      const absX = Math.abs(dx), absY = Math.abs(dy);
+      if (Drag.rackOverflows && e.pointerType !== 'mouse') {
+        // Horizontal gesture while rack overflows -> abort drag immediately so native scroll glides freely
+        if (absX > 10 && absX > absY * 1.1) {
+          cancelTileDrag();
+          return;
+        }
+        // Upward drag toward table commits to tile drag
+        if (dy < -12 && absY >= absX * 0.85) {
+          Drag.moved = true;
+          selectedTileId = Drag.tileId;
+          if (Drag.sourceEl) Drag.sourceEl.classList.add('dragging-src');
+          $('dragTileGhost').classList.remove('hidden');
+        }
+      } else if (Math.hypot(dx, dy) > 14) {
+        Drag.moved = true;
+        selectedTileId = Drag.tileId;
+        // Update source tile styling in place (NEVER rebuild #handRack mid-drag!)
+        if (Drag.sourceEl) Drag.sourceEl.classList.add('dragging-src');
+        $('dragTileGhost').classList.remove('hidden');
+      }
     }
     if (!Drag.moved) return;
+    if (e.cancelable) e.preventDefault();
     const ghost = $('dragTileGhost');
     ghost.style.left = e.clientX + 'px';
     ghost.style.top = e.clientY + 'px';
@@ -3966,17 +4039,10 @@
 
   function endTileDrag(e) {
     if (!Drag.active || e.pointerId !== Drag.pointerId) return;
-    window.removeEventListener('pointermove', moveTileDrag);
-    window.removeEventListener('pointerup', endTileDrag);
-    window.removeEventListener('pointercancel', endTileDrag);
-
     const wasMoved = Drag.moved;
     const tileId = Drag.tileId;
     const snapEnd = Drag.snapEndId;
-    const srcEl = Drag.sourceEl;
-    Drag.active = false; Drag.tileId = null; Drag.pointerId = null; Drag.moved = false; Drag.snapEndId = null; Drag.sourceEl = null;
-    if (srcEl) srcEl.classList.remove('dragging-src');
-    $('dragTileGhost').classList.add('hidden');
+    cancelTileDrag();
 
     if (wasMoved && snapEnd) {
       performPlaceTile(Game.activePlayerIndex, tileId, snapEnd, false);
@@ -4229,19 +4295,23 @@
     else if (selectedTileId) hint.textContent = 'Tap a glowing end on the board to place';
     else hint.textContent = 'Tap a glowing tile or drag onto the board';
 
+    const prevScroll = rack.scrollLeft;
     rack.innerHTML = '';
     if (isSpectator || needsPrivacyCurtain()) {
       rack.innerHTML = `<div class="rack-empty-msg">${isSpectator ? 'Spectator mode — hands remain hidden' : 'Hand hidden for Pass-and-Play'}</div>`;
+      updateRackScrollUI();
       return;
     }
     if (!player.hand.length) {
       rack.innerHTML = `<div class="rack-empty-msg">Hand empty!</div>`;
+      updateRackScrollUI();
       return;
     }
 
     for (const tile of player.hand) {
       const playable = isMyTurn && legalTileSet.has(tile.id);
       const wrap = document.createElement('div');
+      wrap.dataset.playable = playable ? '1' : '0';
       wrap.className = 'rack-tile' +
         (playable ? ' playable' : (isMyTurn ? ' dimmed' : '')) +
         (selectedTileId === tile.id ? ' selected' : '') +
@@ -4259,6 +4329,38 @@
       wrap.addEventListener('pointerdown', (e) => startTileDrag(e, tile, playable));
       rack.appendChild(wrap);
     }
+    rack.scrollLeft = Math.min(prevScroll, Math.max(0, rack.scrollWidth - rack.clientWidth));
+    updateRackScrollUI();
+  }
+
+  function updateRackScrollUI() {
+    const rack = $('handRack');
+    const btnL = $('btnRackLeft');
+    const btnR = $('btnRackRight');
+    if (!rack || !btnL || !btnR) return;
+    const maxScroll = Math.max(0, rack.scrollWidth - rack.clientWidth);
+    const hasOverflow = maxScroll > 4;
+    rack.classList.toggle('has-overflow', hasOverflow);
+    const showL = hasOverflow && rack.scrollLeft > 4;
+    const showR = hasOverflow && rack.scrollLeft < maxScroll - 4;
+    btnL.classList.toggle('hidden', !showL);
+    btnR.classList.toggle('hidden', !showR);
+
+    let playLeft = false, playRight = false;
+    if (hasOverflow) {
+      const viewL = rack.scrollLeft + 6;
+      const viewR = rack.scrollLeft + rack.clientWidth - 6;
+      for (const el of rack.children) {
+        if (el.dataset && el.dataset.playable === '1') {
+          const elL = el.offsetLeft;
+          const elR = elL + el.offsetWidth;
+          if (elR < viewL) playLeft = true;
+          if (elL > viewR) playRight = true;
+        }
+      }
+    }
+    btnL.classList.toggle('has-playable', playLeft);
+    btnR.classList.toggle('has-playable', playRight);
   }
 
   function renderScorecard() {
@@ -4872,6 +4974,23 @@
       AudioFX.tap();
       renderHandRack();
     };
+    $('btnRackLeft').onclick = () => {
+      const r = $('handRack');
+      if (r) r.scrollBy({ left: -Math.max(140, r.clientWidth * 0.65), behavior: 'smooth' });
+    };
+    $('btnRackRight').onclick = () => {
+      const r = $('handRack');
+      if (r) r.scrollBy({ left: Math.max(140, r.clientWidth * 0.65), behavior: 'smooth' });
+    };
+    $('handRack').addEventListener('scroll', updateRackScrollUI, { passive: true });
+    $('handRack').addEventListener('wheel', (e) => {
+      const r = $('handRack');
+      if (!r || r.scrollWidth <= r.clientWidth + 4) return;
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        r.scrollLeft += e.deltaY;
+      }
+    }, { passive: false });
 
     // Privacy Curtain
     $('btnRevealHand').onclick = () => {
@@ -5038,8 +5157,8 @@
     window._checkHashJoin = checkHashJoin;
 
     // Responsive visualViewport refit
-    window.addEventListener('resize', () => fitTable(true));
-    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => fitTable(false));
+    window.addEventListener('resize', () => { fitTable(true); updateRackScrollUI(); });
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { fitTable(false); updateRackScrollUI(); });
   }
 
   function boot() {
